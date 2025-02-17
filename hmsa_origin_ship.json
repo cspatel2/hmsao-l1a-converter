@@ -1,0 +1,233 @@
+{
+    "system": "HMS-A ORIGIN",
+    "optics": {
+        "fl_collimator": 416,
+        "fl_mosaic": 431,
+        "sigma": 98.76,
+        "slits": {
+            "BL": {
+                "x": 29,
+                "y": -16.625,
+                "width": 0.05,
+                "height": 33.25,
+                "ranges": [
+                    [
+                        3150,
+                        4450
+                    ]
+                ]
+            },
+            "BR": {
+                "x": 0,
+                "y": -16.625,
+                "width": 0.05,
+                "height": 33.25,
+                "ranges": [
+                    [
+                        4950, Infinity
+                    ]
+                ]
+            },
+            "TL": {
+                "x": 29,
+                "y": 16.625,
+                "width": 0.05,
+                "height": 33.25,
+                "ranges": [
+                    [
+                        5900, Infinity
+                    ]
+                ]
+            },
+            "TR": {
+                "x": 0,
+                "y": 16.625,
+                "width": 0.05,
+                "height": 33.25,
+                "ranges": [
+                    [
+                        4350,
+                        5000
+                    ]
+                ]
+            }
+        },
+        "mosaic": {
+            "x": -34.480000000000004,
+            "y": 0.7,
+            "width": 52.5,
+            "height": 58.98,
+            "windows": [
+                {
+                    "x": 0,
+                    "y": 1.8,
+                    "width": 24.63,
+                    "height": 26.96,
+                    "ranges": [
+                        [
+                            4810,
+                            4911
+                        ]
+                    ],
+                    "name": "H\u03b2"
+                },
+                {
+                    "x": 24.63,
+                    "y": 1.8,
+                    "width": 24.89,
+                    "height": 26.96,
+                    "ranges": [
+                        [
+                            6375,
+                            6688
+                        ]
+                    ],
+                    "name": "H\u03b1"
+                },
+                {
+                    "x": 0,
+                    "y": 28.76,
+                    "width": 8.13,
+                    "height": 27.72,
+                    "ranges": [
+                        [
+                            4250,
+                            4350
+                        ]
+                    ],
+                    "name": "4278"
+                },
+                {
+                    "x": 8.13,
+                    "y": 28.76,
+                    "width": 8,
+                    "height": 27.72,
+                    "ranges": [
+                        [
+                            5500,
+                            5600
+                        ]
+                    ],
+                    "name": "5577"
+                },
+                {
+                    "x": 16.130000000000003,
+                    "y": 28.76,
+                    "width": 7.5,
+                    "height": 27.72,
+                    "ranges": [
+                        [
+                            6270,
+                            6370
+                        ]
+                    ],
+                    "name": "6300"
+                },
+                {
+                    "x": 23.630000000000003,
+                    "y": 28.76,
+                    "width": 25.89,
+                    "height": 27.72,
+                    "ranges": [
+                        [
+                            7625,
+                            7875
+                        ]
+                    ],
+                    "name": "7774"
+                }
+            ]
+        }
+    },
+    "alignment": {
+        "alpha": -71.02,
+        "gamma_ofst": -0.3
+    },
+    "lines": [
+        {
+            "wavelength": 6300,
+            "slit_key": null,
+            "plot_styles": {
+                "color": "red",
+                "ls": "-.",
+                "lw": 0.5,
+                "ms": 0.2,
+                "label": "6300\u00c5"
+            },
+            "name": null
+        },
+        {
+            "wavelength": 5577,
+            "slit_key": null,
+            "plot_styles": {
+                "color": "green",
+                "ls": "-.",
+                "lw": 0.5,
+                "ms": 0.2,
+                "label": "5577\u00c5"
+            },
+            "name": null
+        },
+        {
+            "wavelength": 7774,
+            "slit_key": null,
+            "plot_styles": {
+                "color": "brown",
+                "ls": "-.",
+                "lw": 0.5,
+                "ms": 0.2,
+                "label": "7774\u00c5"
+            },
+            "name": null
+        },
+        {
+            "wavelength": 4278,
+            "slit_key": null,
+            "plot_styles": {
+                "color": "violet",
+                "ls": "-.",
+                "lw": 0.5,
+                "ms": 0.2,
+                "label": "4278\u00c5"
+            },
+            "name": null
+        },
+        {
+            "wavelength": 6563,
+            "slit_key": null,
+            "plot_styles": {
+                "color": "orange",
+                "ls": "-.",
+                "lw": 0.5,
+                "ms": 0.2,
+                "label": "6563\u00c5"
+            },
+            "name": null
+        },
+        {
+            "wavelength": 4861,
+            "slit_key": null,
+            "plot_styles": {
+                "color": "cyan",
+                "ls": "-.",
+                "lw": 0.5,
+                "ms": 0.2,
+                "label": "4861\u00c5"
+            },
+            "name": null
+        }
+    ],
+    "camera": {
+        "aperture": 254.46900494077323,
+        "scale": 1,
+        "pixel_size": 0.01532567049808429,
+        "exposure": 1,
+        "optical_efficiency": 1,
+        "width": null,
+        "height": null,
+        "well_depth": null,
+        "qe_curve": null,
+        "readout_noise": null,
+        "dark_current": null
+    }
+}
