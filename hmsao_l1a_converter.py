@@ -130,25 +130,41 @@ def get_all_dirs(rootdir: str) -> list:
     return alldirs
 
 
-def get_tstamp_from_fname(fname: str | Iterable[str]) -> Numeric | List[Numeric]:
+def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool=True) -> Numeric | List[Numeric]:
     if isinstance(fname, str):
-        with fits.open(fname) as hdul:
-            if len(hdul) > 1:
-                idx = 1
+        try:
+            if use_name:
+                dirname = os.path.dirname(fname)
+                dirname = os.path.basename(dirname)
+                uname = os.path.basename(fname)
+                while True:
+                    name, ext = uname.rsplit('.', 1)
+                    if ext.isdecimal():
+                        break
+                    else:
+                        uname = name
+                time = datetime.strptime(f'{dirname} {uname} +0100', '%Y%m%d %H%M%S.%f %z')
+                return time.timestamp()
             else:
-                idx = 0
-
-            hdu = hdul[idx]
-            if 'TIMESTAMP_S' in hdu.header:
-                time_s = hdu.header['TIMESTAMP_S']
-                if 'TIMESTAMP_NS' in hdu.header:
-                    time_ns = hdu.header['TIMESTAMP_NS']
+                raise UserWarning('Default fallback')
+        except Exception as e:
+            with fits.open(fname) as hdul:
+                if len(hdul) > 1:
+                    idx = 1
                 else:
-                    time_ns = 0
-                time = time_s + 1e-9*time_ns
-                return time
-            else:
-                raise ValueError('Invalid file')
+                    idx = 0
+
+                hdu = hdul[idx]
+                if 'TIMESTAMP_S' in hdu.header:
+                    time_s = hdu.header['TIMESTAMP_S']
+                    if 'TIMESTAMP_NS' in hdu.header:
+                        time_ns = hdu.header['TIMESTAMP_NS']
+                    else:
+                        time_ns = 0
+                    time = time_s + 1e-9*time_ns
+                    return time
+                else:
+                    raise ValueError('Invalid file')
     else:
         return list(map(get_tstamp_from_fname, fname))
 
@@ -398,14 +414,14 @@ for key, filelist in main_flist.items():
     output = []  # straighten images
     imgsize = (len(predictor.beta_grid), len(predictor.gamma_grid))
 
-    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8), dpi=150)
-    fig.subplots_adjust(right=0.85)
-    cax = fig.add_axes([0.9, 0.1, 0.03, 0.8])
-    ax.set_title(f'{key:%Y-%m-%d}')
-    plt.ion()
-    plt.show()
-    fig.canvas.draw_idle()
-    fig.canvas.flush_events()
+    # fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8), dpi=150)
+    # fig.subplots_adjust(right=0.85)
+    # cax = fig.add_axes([0.9, 0.1, 0.03, 0.8])
+    # ax.set_title(f'{key:%Y-%m-%d}')
+    # plt.ion()
+    # plt.show()
+    # fig.canvas.draw_idle()
+    # fig.canvas.flush_events()
     # Process Images
     for fidx, fn in enumerate(tqdm(filelist, desc=f'{key:%Y-%m-%d}')):
         # initialize the index of the hdul data using the first file
@@ -482,7 +498,7 @@ for key, filelist in main_flist.items():
             )
             output.append(data)
             # ax.clear()
-    plt.close(fig)
+    # plt.close(fig)
 
     # Create Dataset and save
     isornah = 'is'
