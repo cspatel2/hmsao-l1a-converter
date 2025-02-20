@@ -397,6 +397,9 @@ def main(parser: argparse.ArgumentParser):
 
     print(f'data will be saved to: {args.dest}\n')
 
+    del idx, tstamps, files
+    gc.collect()
+
     # get dark data
     is_dark_subtracted = 'is'
     if args.dark is not None:
