@@ -135,8 +135,6 @@ def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool = True) -> 
     if isinstance(fname, str):
         try:
             if use_name:
-                dirname = os.path.dirname(fname)
-                dirname = os.path.basename(dirname)
                 uname = os.path.basename(fname)
                 while True:
                     name, ext = uname.rsplit('.', 1)
@@ -145,7 +143,7 @@ def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool = True) -> 
                     else:
                         uname = name
                 time = datetime.strptime(
-                    f'{dirname} {uname} +0100', '%Y%m%d %H%M%S.%f %z')
+                    f'{uname} +0000', '%Y%m%d%H%M%S.%f %z')
                 return time.timestamp()
             else:
                 raise UserWarning('Default fallback')
@@ -418,12 +416,7 @@ def main(parser: argparse.ArgumentParser):
     else:
         windows = args.windows
 
-    print(f'Windows to be processed: {windows} nm')
-
-    # each nc file should contain frames from midnight to midnight
-    current_start_time = datetime(
-        start_date.year, start_date.month, start_date.day, 0, 0, 0)
-    # print(f'current start time: = {current_start_time}')
+    print(f'Windows to be processed: {', '.join(windows)}')
 
     for key, filelist in main_flist.items():
         # print(f'[{key:%Y-%m-%d}] Starting conversion...')
@@ -444,7 +437,7 @@ def main(parser: argparse.ArgumentParser):
                     os.remove(outfpath)
 
         # TODO: this needs to be split into N loops, where N is number of loops we need to cover all the files in this day's list in M chunks
-
+        absstart = perf_counter_ns()
         # split 1 day into len(filesperday)/n loops
         n = args.chunksize
         chunks = ceil(len(filelist) / n)
@@ -452,12 +445,12 @@ def main(parser: argparse.ArgumentParser):
         iterlim = chunks * n
         # subfilelists = [filelist[i:i+n] for i in np.arange(0, len(filelist), n)]
         print(f'Number of chunks of day: {chunks}')
-        output = {k: [] for k in windows}
         imgsize = (len(predictor.beta_grid), len(predictor.gamma_grid))
         # for subidx, sublist in enumerate(subfilelists):
         for subidx in range(chunks):
+            output = {k: [] for k in windows}
             sublist = filelist[subidx*n:(subidx + 1)*n]
-            for fidx, fn in enumerate(tqdm(sublist, desc=f'{key:%Y-%m-%d} - [{subidx+1:0{ndigits}}/{chunks}]')):
+            for _, fn in enumerate(tqdm(sublist, desc=f'{key:%Y-%m-%d} - [{subidx+1:0{ndigits}}/{chunks}]')):
                 # initialize the index of the hdul data using the first file
                 # key = 'IMAGE'  # use hdul.info() to see all keys in file
                 with fits.open(fn) as hdul:
@@ -487,6 +480,7 @@ def main(parser: argparse.ArgumentParser):
                     image = Image.new('F', imgsize, color=np.nan)
                     image.paste(data, (110, 410))
                     data = np.asarray(image).copy()
+                    del image
                     # array -> DataArray
                     data_ = xr.DataArray(
                         data,
@@ -545,8 +539,11 @@ def main(parser: argparse.ArgumentParser):
                 ds.to_netcdf(sub_outfpath, encoding=encoding)
                 tend = perf_counter_ns()
                 print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
-        del output
-        gc.collect()
+            del output
+            gc.collect()
+        absend = perf_counter_ns()
+
+        print(f'\nDone: {key:%Y-%m-%d}, {(absend - absstart)*1e-9:.3f} s')
 
 
 # %%
