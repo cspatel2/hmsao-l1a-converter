@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime, timezone, timedelta
 import gc
 from genericpath import isfile
+from math import ceil
 import os
 import sys
 from time import perf_counter_ns
@@ -130,7 +131,7 @@ def get_all_dirs(rootdir: str) -> list:
     return alldirs
 
 
-def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool=True) -> Numeric | List[Numeric]:
+def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool = True) -> Numeric | List[Numeric]:
     if isinstance(fname, str):
         try:
             if use_name:
@@ -143,7 +144,8 @@ def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool=True) -> Nu
                         break
                     else:
                         uname = name
-                time = datetime.strptime(f'{dirname} {uname} +0100', '%Y%m%d %H%M%S.%f %z')
+                time = datetime.strptime(
+                    f'{dirname} {uname} +0100', '%Y%m%d %H%M%S.%f %z')
                 return time.timestamp()
             else:
                 raise UserWarning('Default fallback')
@@ -252,14 +254,20 @@ parser.add_argument(
     help='If you want to rewrite an existing file, then True. Defaults to False.'
 )
 
+
+def list_of_strings(arg: str) -> List[str]:
+    return arg.split(',')
+
+
 parser.add_argument(
-    '--window',
+    '--windows',
     # metavar = 'NAME',
-    required=True,
-    type=str,
-    # default = AS REQUIRED,
+    # action='append',
+    required=False,
+    type=list_of_strings,
+    default=None,
     nargs='?',
-    help='Window to process.'
+    help='Window(s) to process (list of str i.e. "1235", "3456").'
 )
 
 parser.add_argument(
@@ -281,274 +289,267 @@ parser.add_argument(
     nargs='?',
     help='Instrument Model file path.'
 )
+
+parser.add_argument(
+    '--chunksize',
+    # metavar = 'NAME',
+    required=False,
+    type=int,
+    default=10,  # fix this later depending on what the ideal number of files should be per chunk
+    nargs='?',
+    help='Number of files per chunk.'
+)
 # %%
-args = parser.parse_args()
 
-# 0. Paths
-if os.path.exists(args.dest):
-    if os.path.isfile(args.dest):
-        print('Destination path provided is a file. Directory path required.')
-        sys.exit()
-else:
-    os.makedirs(args.dest, exist_ok=True)
 
-# 1. Check provided arguments and Initialize
+def main(parser: argparse.ArgumentParser):
+    args = parser.parse_args()
 
-# Create model and confirm that the Instrument file provided works
-model = MisInstrumentModel.load(args.model)
-predictor = MisCurveRemover(model)  # line straightening
-
-# check destination path is a real directory
-if os.path.exists(args.dest) and os.path.isfile(args.dest):
-    print('Destination path provided is a file. Directory path required.')
-
-# check if root dir exists
-if not os.path.isdir(args.rootdir):
-    print("Root Directory provided does not exist.")
-    sys.exit()
-
-# get all the fits files from all the subdirs, sorted by time
-dirlist = get_all_dirs(args.rootdir)
-print(dirlist[0])
-files = None
-tstamps = None
-print(f'Total Number of Directories in Rootdir: {len(dirlist)}')
-dirlist.sort()
-for d in dirlist:
-    f = glob(os.path.join(d, '*.fit*'))
-    tstamp = get_tstamp_from_fname(f)
-    idx = np.argsort(tstamp)
-    tstamp = np.asarray(tstamp)[idx]
-    f = np.asarray(f, dtype=object)[idx]
-    if files is None:
-        files = f
-        tstamps = tstamp
+    # 0. Paths
+    if os.path.exists(args.dest):
+        if os.path.isfile(args.dest):
+            print('Destination path provided is a file. Directory path required.')
+            sys.exit()
     else:
-        files = np.concatenate([files, f])
-        tstamps = np.concatenate([tstamps, tstamp])
-if len(files) < 1:
-    raise ValueError('No .fit files in rootdir')
-else:
-    print(f'Total Number of Files to Process: {len(files)}\n')
+        os.makedirs(args.dest, exist_ok=True)
 
-# final list of files to process
-idx = np.argsort(tstamps)
-tstamps = np.sort(tstamps)
-files = files[idx]
+    # 1. Check provided arguments and Initialize
 
-# get start and end date of the full dataset
-start_date = datetime.fromtimestamp(tstamps[0], tz=pytz.utc)
-end_date = datetime.fromtimestamp(tstamps[-1], tz=pytz.utc)
-print(f'Start DateTime: {start_date}')
-print(f'End DateTime: {end_date} \n')
+    # Create model and confirm that the Instrument file provided works
+    model = MisInstrumentModel.load(args.model)
+    predictor = MisCurveRemover(model)  # line straightening
 
-# break up into individual days, day is midnight to midnight
-st_date = start_date.date() - timedelta(days=1)
-lst_date = end_date.date() + timedelta(days=1)
-main_flist: Dict[datetime, List[str]] = {}
-all_files = []
-print('Dates with data: ', end='')
-data_found = False
-first = True
-while st_date <= lst_date:
-    _st_date = st_date
-    start = datetime_in_timezone(
-        pytz.utc, st_date.year, st_date.month, st_date.day)  # midnight
-    st_date += timedelta(days=1)
-    stop = start + timedelta(days=1)  # to midnight
-    start_ts = start.timestamp()
-    stop_ts = stop.timestamp()
-    valid_files = [f if start_ts <= t <
-                   stop_ts else '' for f, t in zip(files, tstamps)]
-    while '' in valid_files:
-        valid_files.remove('')
-    if len(valid_files) > 0:
-        data_found = True
-        main_flist[_st_date] = valid_files
-        all_files += valid_files
-        if first:
-            print(_st_date, end='')
-            first = False
+    # check destination path is a real directory
+    if os.path.exists(args.dest) and os.path.isfile(args.dest):
+        print('Destination path provided is a file. Directory path required.')
+
+    # check if root dir exists
+    if not os.path.isdir(args.rootdir):
+        print("Root Directory provided does not exist.")
+        sys.exit()
+
+    # get all the fits files from all the subdirs, sorted by time
+    dirlist = get_all_dirs(args.rootdir)
+    print(dirlist[0])
+    files = None
+    tstamps = None
+    print(f'Total Number of Directories in Rootdir: {len(dirlist)}')
+    dirlist.sort()
+    for d in dirlist:
+        f = glob(os.path.join(d, '*.fit*'))
+        tstamp = get_tstamp_from_fname(f)
+        idx = np.argsort(tstamp)
+        tstamp = np.asarray(tstamp)[idx]
+        f = np.asarray(f, dtype=object)[idx]
+        if files is None:
+            files = f
+            tstamps = tstamp
         else:
-            print(',', _st_date, end='')
-        sys.stdout.flush()
-if not data_found:
-    print('None')
-print('\n')
+            files = np.concatenate([files, f])
+            tstamps = np.concatenate([tstamps, tstamp])
+    if len(files) < 1:
+        raise ValueError('No .fit files in rootdir')
+    else:
+        print(f'Total Number of Files to Process: {len(files)}\n')
 
-print(f'data will be saved to: {args.dest}\n')
-# get dark data
-if args.dark is not None:
-    dfile = args.dark
-    darkds = xr.load_dataset(dfile)
-else:
-    darkds = None
+    # final list of files to process
+    idx = np.argsort(tstamps)
+    tstamps = np.sort(tstamps)
+    files = files[idx]
 
-# Check that user provided windows can be processed
-window = args.window
-if window not in predictor.windows:
-    raise ValueError(
-        f'Invalid window name: {window}. Available window names are {predictor.windows}.')
-else:
-    print(f'Processing ROI: {window} nm')
+    # get start and end date of the full dataset
+    start_date = datetime.fromtimestamp(tstamps[0], tz=pytz.utc)
+    end_date = datetime.fromtimestamp(tstamps[-1], tz=pytz.utc)
+    print(f'Start DateTime: {start_date}')
+    print(f'End DateTime: {end_date} \n')
 
-# each nc file should contain frames from midnight to midnight
-current_start_time = datetime(
-    start_date.year, start_date.month, start_date.day, 0, 0, 0)
-# print(f'current start time: = {current_start_time}')
+    # break up into individual days, day is midnight to midnight
+    st_date = start_date.date() - timedelta(days=1)
+    lst_date = end_date.date() + timedelta(days=1)
+    main_flist: Dict[datetime, List[str]] = {}
+    all_files = []
+    print('Dates with data: ', end='')
+    data_found = False
+    first = True
+    while st_date <= lst_date:
+        _st_date = st_date
+        start = datetime_in_timezone(
+            pytz.utc, st_date.year, st_date.month, st_date.day)  # midnight
+        st_date += timedelta(days=1)
+        stop = start + timedelta(days=1)  # to midnight
+        start_ts = start.timestamp()
+        stop_ts = stop.timestamp()
+        valid_files = [f if start_ts <= t <
+                       stop_ts else '' for f, t in zip(files, tstamps)]
+        while '' in valid_files:
+            valid_files.remove('')
+        if len(valid_files) > 0:
+            data_found = True
+            main_flist[_st_date] = valid_files
+            all_files += valid_files
+            if first:
+                print(_st_date, end='')
+                first = False
+            else:
+                print(',', _st_date, end='')
+            sys.stdout.flush()
+    if not data_found:
+        print('None')
+    print('\n')
 
-for key, filelist in main_flist.items():
-    # print(f'[{key:%Y-%m-%d}] Starting conversion...')
-    yymmdd = f'{key:%Y%m%d}'
-    prefix = args.dest_prefix
-    outfname = f"{prefix}_{yymmdd}_{window}.nc"
-    outfpath = os.path.join(args.dest, outfname)
-    if os.path.exists(outfpath):
-        if not args.overwrite:
-            print(f'{outfname} already exists. skipping.')
-            continue
-        else:
-            os.remove(outfpath)
+    print(f'data will be saved to: {args.dest}\n')
 
-    # Initialize
-    output = []  # straighten images
-    imgsize = (len(predictor.beta_grid), len(predictor.gamma_grid))
+    # get dark data
+    is_dark_subtracted = 'is'
+    if args.dark is not None:
+        dfile = args.dark
+        darkds = xr.load_dataset(dfile)
+    else:
+        darkds = None
+        is_dark_subtracted += ' not'
 
-    # fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8), dpi=150)
-    # fig.subplots_adjust(right=0.85)
-    # cax = fig.add_axes([0.9, 0.1, 0.03, 0.8])
-    # ax.set_title(f'{key:%Y-%m-%d}')
-    # plt.ion()
-    # plt.show()
-    # fig.canvas.draw_idle()
-    # fig.canvas.flush_events()
-    # Process Images
-    for fidx, fn in enumerate(tqdm(filelist, desc=f'{key:%Y-%m-%d}')):
-        # initialize the index of the hdul data using the first file
-        # key = 'IMAGE'  # use hdul.info() to see all keys in file
-        with fits.open(fn) as hdul:
-            hdu = hdul['IMAGE']
-            header = hdu.header
-            tstamp = get_tstamp_from_hdu(hdu)  # s
-            ststamp = datetime.fromtimestamp(tstamp, tz=pytz.utc)
-            exposure = get_exposure_from_hdu(hdu)  # s
-            temp = header['CCD-TEMP']  # C
-            # 1. get img
-            data = np.asarray(hdu.data, dtype=float)  # counts
-            # plt.figure()
-            # plt.imshow(data, vmin = np.nanpercentile(data,0.1), vmax = np.nanpercentile(data,99) )
-            # plt.colorbar()
-            # plt.savefig('img_step1.png')
-            # 1a. hot pixel correction for long exposures
-            _, data = find_outlier_pixels(data)
-            # 2. dark/bias correction
-            if darkds is not None:
-                dark = np.asarray(darkds['darkrate'].values, dtype=float)
-                bias = np.asarray(darkds['bias'].values, dtype=float)
-                data -= bias + dark * exposure  # counts
-            # plt.figure()
-            # plt.imshow(data, vmin = np.nanpercentile(data,0.1), vmax = np.nanpercentile(data,99) )
-            # plt.colorbar()
-            # plt.savefig('img_step2.png')
-            # 3. total counts -> counts.sec
-            data = data/exposure  # counts/sec
-            # plt.figure()
-            # plt.imshow(data, vmin = np.nanpercentile(data,0.1), vmax = np.nanpercentile(data,99) )
-            # plt.colorbar()
-            # plt.savefig('img_step3.png')
-            # 4. Crop and resize image
-            data = Image.fromarray(data)
-            data = data.rotate(-.311,
-                               resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
-            data = data.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-            image = Image.new('F', imgsize, color=np.nan)
-            image.paste(data, (110, 410))
-            data = np.asarray(image).copy()
-            # plt.figure()
-            # plt.imshow(data)
-            # plt.savefig('img_step4.png')
-            # array -> DataArray
-            data = xr.DataArray(
-                data,
-                dims=['gamma', 'beta'],
-                coords={
-                    'gamma': predictor.gamma_grid,
-                    'beta': predictor.beta_grid
-                },
-                attrs={'unit': 'ADU/s'}
-            )
-            # 5. straighten img
-            data = predictor.straighten_image(data, window)
-            # 6. Plot
-            # tstamp_str = ststamp.strftime("%Y-%m-%d %H:%M:%S")
-            # fig.suptitle(f'{tstamp_str} UTC')
-            # im = data.plot(ax=ax, cmap='viridis', add_colorbar=False)
-            # fig.colorbar(im, cax=cax)
-            # fig.savefig('plot.png')
-            # fig.canvas.draw_idle()
-            # fig.canvas.flush_events()
-            # 7. Save
-            data = data.expand_dims(
-                dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True)
-            data['exposure'] = xr.Variable(
-                dims='tstamp', data=[exposure], attrs={'unit': 's'}
-            )
-            data['ccdtemp'] = xr.Variable(
-                dims='tstamp', data=[temp], attrs={'unit': 'C'}
-            )
-            output.append(data)
-            # ax.clear()
-    # plt.close(fig)
+    # Check that user provided windows can be processed
+    if args.windows is not None and isinstance(args.windows, list):
+        windows = [
+            window for window in args.windows if window in predictor.windows]
+        if len(windows) == 0:
+            raise ValueError(
+                f'Invalid Window names: {args.windows}. Available window names are {predictor.windows}')
+    else:
+        windows = args.windows
 
-    # Create Dataset and save
-    isornah = 'is'
-    if darkds is None: isornah += ' not'
+    print(f'Windows to be processed: {windows} nm')
 
-    tnow = datetime.now(timezone.utc).strftime('%d/%m/%Y, %H:%M:%S UTC')
-    ds: xr.Dataset = xr.concat(output, dim='tstamp')
-    del output
-    gc.collect()
-    ds.attrs.update(
-        dict(Description=" HMSA-O Straighted Spectra",
-             ROI=f'{str(window)} nm',
-             DataProcessingLevel='1A',
-             FileCreationDate=tnow,
-             ObservationLocation='Swedish Institute of Space Physics/IRF (Kiruna, Sweden)',
-             Note = f'data {isornah} dark corrected.',
-             )
-    )
+    # each nc file should contain frames from midnight to midnight
+    current_start_time = datetime(
+        start_date.year, start_date.month, start_date.day, 0, 0, 0)
+    # print(f'current start time: = {current_start_time}')
 
-    ds['intensity'].attrs['unit'] = 'ADU/s'
-    ds['tstamp'].attrs['unit'] = 's'
-    ds['tstamp'].attrs['description'] = 'Seconds since UNIX epoch 1970-01-01 00:00:00 UTC'
-    encoding = {var: {'zlib': True}
-                for var in (*ds.data_vars.keys(), *ds.coords.keys())}
+    for key, filelist in main_flist.items():
+        # print(f'[{key:%Y-%m-%d}] Starting conversion...')
 
-    print('Saving %s...\t' % (outfname), end='')
-    sys.stdout.flush()
-    tstart = perf_counter_ns()
-    ds.to_netcdf(outfpath, encoding=encoding)
-    tend = perf_counter_ns()
-    print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
+        yymmdd = f'{key:%Y%m%d}'
+        prefix = args.dest_prefix
+        # file names/paths of the complete file of a given day and window
+        outfnames = [f"{prefix}_{yymmdd}_{window}.nc" for window in windows]
+        outfpaths = [os.path.join(args.dest, outfname)
+                     for outfname in outfnames]
+
+        for pathidx, outfpath in enumerate(outfpaths):
+            if os.path.exists(outfpath):
+                if not args.overwrite:
+                    print(f'{outfnames[pathidx]} already exists. skipping.')
+                    continue
+                else:
+                    os.remove(outfpath)
+
+        # TODO: this needs to be split into N loops, where N is number of loops we need to cover all the files in this day's list in M chunks
+
+        # split 1 day into len(filesperday)/n loops
+        n = args.chunksize
+        chunks = ceil(len(filelist) / n)
+        ndigits = ceil(np.log10(chunks))
+        iterlim = chunks * n
+        # subfilelists = [filelist[i:i+n] for i in np.arange(0, len(filelist), n)]
+        print(f'Number of chunks of day: {chunks}')
+        output = {k: [] for k in windows}
+        imgsize = (len(predictor.beta_grid), len(predictor.gamma_grid))
+        # for subidx, sublist in enumerate(subfilelists):
+        for subidx in range(chunks):
+            sublist = filelist[subidx*n:(subidx + 1)*n]
+            for fidx, fn in enumerate(tqdm(sublist, desc=f'{key:%Y-%m-%d} - [{subidx+1:0{ndigits}}/{chunks}]')):
+                # initialize the index of the hdul data using the first file
+                # key = 'IMAGE'  # use hdul.info() to see all keys in file
+                with fits.open(fn) as hdul:
+                    hdu = hdul['IMAGE']
+                    header = hdu.header
+                    tstamp = get_tstamp_from_hdu(hdu)  # s
+                    ststamp = datetime.fromtimestamp(tstamp, tz=pytz.utc)
+                    exposure = get_exposure_from_hdu(hdu)  # s
+                    temp = header['CCD-TEMP']  # C
+                    # 1. get img
+                    data = np.asarray(hdu.data, dtype=float)  # counts
+                    # 1a. hot pixel correction for long exposures
+                    _, data = find_outlier_pixels(data)
+                    # 2. dark/bias correction
+                    if darkds is not None:
+                        dark = np.asarray(
+                            darkds['darkrate'].values, dtype=float)
+                        bias = np.asarray(darkds['bias'].values, dtype=float)
+                        data -= bias + dark * exposure  # counts
+                    # 3. total counts -> counts.sec
+                    data = data/exposure  # counts/sec
+                    # 4. Crop and resize image
+                    data = Image.fromarray(data)
+                    data = data.rotate(-.311,
+                                       resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
+                    data = data.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                    image = Image.new('F', imgsize, color=np.nan)
+                    image.paste(data, (110, 410))
+                    data = np.asarray(image).copy()
+                    # array -> DataArray
+                    data_ = xr.DataArray(
+                        data,
+                        dims=['gamma', 'beta'],
+                        coords={
+                            'gamma': predictor.gamma_grid,
+                            'beta': predictor.beta_grid
+                        },
+                        attrs={'unit': 'ADU/s'}
+                    )
+                    # 5. straighten img
+                    # TODO: This needs to loop over windows
+                    for window in windows:
+                        data = predictor.straighten_image(data_, window)
+                        # 6. Save
+                        data = data.expand_dims(
+                            dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True)
+                        data['exposure'] = xr.Variable(
+                            dims='tstamp', data=[exposure], attrs={'unit': 's'}
+                        )
+                        data['ccdtemp'] = xr.Variable(
+                            dims='tstamp', data=[temp], attrs={'unit': 'C'}
+                        )
+                        # TODO: This append needs to happen to an array for THAT window
+                        output[window].append(data)
+
+            # Create Dataset and save
+
+            for window in windows:
+                # TODO: format this so that if there are 11 files generated (0, 1, ... 10),
+                # they are numbered [00], [01], ... [10] for sorting purposes
+                # this way the typical naming scheme is preserved
+                sub_outfname = f"{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
+                sub_outfpath = os.path.join(args.dest, sub_outfname)
+                ds: xr.Dataset = xr.concat(output[window], dim='tstamp')
+                gc.collect()
+                ds.attrs.update(
+                    dict(Description=" HMSA-O Straighted Spectra",
+                         ROI=f'{str(window)} nm',
+                         DataProcessingLevel='1A',
+                         # FileCreationDate=tnow,
+                         ObservationLocation='Swedish Institute of Space Physics/IRF (Kiruna, Sweden)',
+                         Note=f'data {is_dark_subtracted} dark corrected.',
+                         )
+                )
+
+                ds['intensity'].attrs['unit'] = 'ADU/s'
+                ds['tstamp'].attrs['unit'] = 's'
+                ds['tstamp'].attrs['description'] = 'Seconds since UNIX epoch 1970-01-01 00:00:00 UTC'
+                encoding = {var: {'zlib': True}
+                            for var in (*ds.data_vars.keys(), *ds.coords.keys())}
+
+                print('Saving %s...\t' % (sub_outfname), end='')
+                sys.stdout.flush()
+                tstart = perf_counter_ns()
+                ds.to_netcdf(sub_outfpath, encoding=encoding)
+                tend = perf_counter_ns()
+                print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
+        del output
+        gc.collect()
 
 
 # %%
-
-# %%
-# import xarray as xr
-# import matplotlib.pyplot as plt
-
-# ds = xr.open_dataset('/home/charmi/Projects/hms-ao/l1a_converter/l1a_data/trial_20250117_5577.nc')
-# ds.intensity.isel(tstamp = 1).plot()
-# plt.axvline(557.7)
-# # %%
-# darkds = xr.open_dataset('zwoasi533_darkbias_T-15_G100.nc')
-# # %%
-# darkds
-# # %%
-# data = darkds.darkrate.values*120
-# plt.imshow(data)
-# plt.colorbar()
-# %%
-# np.nanmax(data)
+if __name__ == '__main__':
+    main(parser)
 # %%
