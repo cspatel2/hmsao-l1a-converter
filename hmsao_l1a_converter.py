@@ -317,6 +317,18 @@ def main(parser: argparse.ArgumentParser):
     model = MisInstrumentModel.load(args.model)
     predictor = MisCurveRemover(model)  # line straightening
 
+    # Check that user provided windows can be processed
+    if args.windows is not None and isinstance(args.windows, list):
+        windows = [
+            window for window in args.windows if window in predictor.windows]
+        if len(windows) == 0:
+            raise ValueError(
+                f'Invalid Window names: {args.windows}. Available window names are {predictor.windows}')
+    else:
+        windows = predictor.windows
+
+    print(f'Windows to be processed: {', '.join(windows)}')
+
     # check destination path is a real directory
     if os.path.exists(args.dest) and os.path.isfile(args.dest):
         print('Destination path provided is a file. Directory path required.')
@@ -328,7 +340,6 @@ def main(parser: argparse.ArgumentParser):
 
     # get all the fits files from all the subdirs, sorted by time
     dirlist = get_all_dirs(args.rootdir)
-    print(dirlist[0])
     files = None
     tstamps = None
     print(f'Total Number of Directories in Rootdir: {len(dirlist)}')
@@ -408,18 +419,6 @@ def main(parser: argparse.ArgumentParser):
     else:
         darkds = None
         is_dark_subtracted += ' not'
-
-    # Check that user provided windows can be processed
-    if args.windows is not None and isinstance(args.windows, list):
-        windows = [
-            window for window in args.windows if window in predictor.windows]
-        if len(windows) == 0:
-            raise ValueError(
-                f'Invalid Window names: {args.windows}. Available window names are {predictor.windows}')
-    else:
-        windows = args.windows
-
-    print(f'Windows to be processed: {', '.join(windows)}')
 
     for key, filelist in main_flist.items():
         # print(f'[{key:%Y-%m-%d}] Starting conversion...')
