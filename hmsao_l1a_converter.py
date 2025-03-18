@@ -20,6 +20,8 @@ import xarray as xr
 from tqdm import tqdm
 from typing import Dict, Iterable, List, SupportsFloat as Numeric
 from skmpython import datetime_in_timezone
+from skimage import transform
+
 
 from misdesigner import MisInstrumentModel, MisCurveRemover
 # %% functions
@@ -261,13 +263,13 @@ def convert_gamma_to_zenithangle(ds:xr.Dataset,plot:bool=False, returnboth:bool=
     #replace gamma to raw za values
     ds['gamma'] = angles
     ds['gamma'] = ds['gamma'].assign_attrs({'unit': 'deg', 'long_name': 'Zenith Angle'})
-
+    ds.rename({'gamma':'za'})
     #replace gamma to linear za values
     nds = ds.copy()
     nds.values = timg
     nds['gamma'] = linangles
     nds['gamma'] = nds['gamma'].assign_attrs({'unit': 'deg', 'long_name': 'Zenith Angle'}) 
-
+    nds.rename({'gamma':'za'})
     if plot:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize = (12, 6), dpi=300)
         fig.tight_layout()
@@ -329,7 +331,7 @@ parser.add_argument(
     metavar='dest_prefix',
     # required = False,
     type=str,
-    default=os.getcwd(),
+    default=None,
     nargs='?',
     help='Prefix of the saved L1 data finename.'
 )
@@ -401,12 +403,16 @@ def main(parser: argparse.ArgumentParser):
             sys.exit()
     else:
         os.makedirs(args.dest, exist_ok=True)
+    # print(f'destination dir set to: {args.dest}')
 
     # 1. Check provided arguments and Initialize
 
     # Create model and confirm that the Instrument file provided works
     model = MisInstrumentModel.load(args.model)
     predictor = MisCurveRemover(model)  # line straightening
+
+    if args.dest_prefix is None:
+        args.dest_prefix = model.get_instrument().system.replace(' ','').lower()
 
     # Check that user provided windows can be processed
     if args.windows is not None and isinstance(args.windows, list):
@@ -419,10 +425,6 @@ def main(parser: argparse.ArgumentParser):
         windows = predictor.windows
 
     print(f'Windows to be processed: {', '.join(windows)}')
-
-    # check destination path is a real directory
-    if os.path.exists(args.dest) and os.path.isfile(args.dest):
-        print('Destination path provided is a file. Directory path required.')
 
     # check if root dir exists
     if not os.path.isdir(args.rootdir):
@@ -600,10 +602,11 @@ def main(parser: argparse.ArgumentParser):
                         output[window].append(data)
 
             # Create Dataset and save
-
             for window in windows:
                 sub_outfname = f"{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
                 sub_outfpath = os.path.join(args.dest, sub_outfname)
+                print(args.dest)
+                print(sub_outfpath)
                 ds: xr.Dataset = xr.concat(output[window], dim='tstamp')
                 gc.collect()
                 ds.attrs.update(
