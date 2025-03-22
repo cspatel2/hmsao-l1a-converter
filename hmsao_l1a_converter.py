@@ -195,8 +195,9 @@ def get_exposure_from_hdu(hdu) -> Numeric:
         return exp
     else:
         raise ValueError('Invalid File')
-    
-def zenith_angle(gamma_mm:Numeric|Iterable[Numeric], f1:Numeric=30, f2:Numeric=30, D:Numeric= 24, yoffset:Numeric = 12.7) -> Numeric:
+
+
+def zenith_angle(gamma_mm: Numeric | Iterable[Numeric], f1: Numeric = 30, f2: Numeric = 30, D: Numeric = 24, yoffset: Numeric = 12.7) -> Numeric:
     """Calculates the zenith angle in degrees from the gamma(mm) in slit coordinates.
 
     Args:
@@ -210,16 +211,19 @@ def zenith_angle(gamma_mm:Numeric|Iterable[Numeric], f1:Numeric=30, f2:Numeric=3
         Numeric: the zenith angle in degrees.
                 Note: result is non linear b/c of arctan()
 
-    """    
+    """
     if isinstance(gamma_mm, (int, float)):
         return [zenith_angle(x) for x in gamma_mm]
-    if np.min(gamma_mm) < 0: sign = -1
-    else : sign = 1
+    if np.min(gamma_mm) < 0:
+        sign = -1
+    else:
+        sign = 1
     num = -(gamma_mm-(sign*yoffset))*(f1+f2-D)
     den = f1*f2
     return np.rad2deg(np.arctan(num/den))
 
-def convert_gamma_to_zenithangle(ds:xr.Dataset,plot:bool=False, returnboth:bool=False):
+
+def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth: bool = False):
     """converts gamma(mm) in slit coordinate to zenith angle (degrees) in a straightened dataset.
 
     Args:
@@ -230,62 +234,70 @@ def convert_gamma_to_zenithangle(ds:xr.Dataset,plot:bool=False, returnboth:bool=
     Returns:
         _type_: dataset with gamma(mm) replaced with zenith angle (deg)
                 Note: calculated zenith angles are non-linear b/c of arctann(). This is corrected using ndimage.transform.warp() to a linearized zenith angles.
-    """    
-    
-    #gamma -> zenith angle
+    """
+    # initilize the new dataset with linear za
+    nds = ds.copy()
+
+    # gamma -> zenith angle
     angles = zenith_angle(ds.gamma.values)
 
-    #coordinate map in the input image
-    mxi , myi = np.meshgrid(ds.wavelength.values, angles)
+    # coordinate map in the input image
+    mxi, myi = np.meshgrid(ds.wavelength.values, angles)
     imin, imax = np.nanmin(myi), np.nanmax(myi)
-    myi -= imin #shift to 0
-    myi /= (imax - imin) #normalize to 1
-    myi *= (len(angles)) #adjust
+    myi -= imin  # shift to 0
+    myi /= (imax - imin)  # normalize to 1
+    myi *= (len(angles))  # adjust
 
-    #coordinate map in the output image
-    if np.nanmin(angles) < 0: sign = 1
-    else : sign = -1
-    linangles = np.linspace(np.min(angles), np.max(angles), len(angles),endpoint=True)[::sign] #array of linear zenith angles
+    # coordinate map in the output image
+    if np.nanmin(angles) < 0:
+        sign = 1
+    else:
+        sign = -1
+    linangles = np.linspace(np.min(angles), np.max(angles), len(
+        angles), endpoint=True)[::sign]  # array of linear zenith angles
     mxo, myo = np.meshgrid(ds.wavelength.values, linangles)
-    omin,omax = np.nanmin(mxo), np.nanmax(mxo) 
-    mxo -= omin #shift to 0
-    mxo /= (omax - omin) #normalize to 1
-    mxo *= (len(ds.wavelength.values)) #adjust
+    omin, omax = np.nanmin(mxo), np.nanmax(mxo)
+    mxo -= omin  # shift to 0
+    mxo /= (omax - omin)  # normalize to 1
+    mxo *= (len(ds.wavelength.values))  # adjust
 
-    #inverse map 
-    imap = np.zeros((2,*(ds.shape)),dtype = float) 
-    imap[0,:,:] = myi #input image map
-    imap[1,:,:] = mxo #output image map
+    # inverse map
+    imap = np.zeros((2, *(ds.shape)), dtype=float)
+    imap[0, :, :] = myi  # input image map
+    imap[1, :, :] = mxo  # output image map
 
-    #nonlinear za -> linear za
-    timg = transform.warp(ds.values, imap, order = 1,cval = np.nan)
+    # nonlinear za -> linear za
+    timg = transform.warp(ds.values, imap, order=1, cval=np.nan)
 
-    #replace gamma to raw za values
+    # replace gamma to raw za values
     ds['gamma'] = angles
-    ds['gamma'] = ds['gamma'].assign_attrs({'unit': 'deg', 'long_name': 'Zenith Angle'})
-    ds.rename({'gamma':'za'})
-    #replace gamma to linear za values
-    nds = ds.copy()
+    ds['gamma'] = ds['gamma'].assign_attrs(
+        {'unit': 'deg', 'long_name': 'Zenith Angle'})
+    ds = ds.rename({'gamma': 'za'})
+    # replace gamma to linear za values
     nds.values = timg
     nds['gamma'] = linangles
-    nds['gamma'] = nds['gamma'].assign_attrs({'unit': 'deg', 'long_name': 'Zenith Angle'}) 
-    nds.rename({'gamma':'za'})
+    nds['gamma'] = nds['gamma'].assign_attrs(
+        {'unit': 'deg', 'long_name': 'Zenith Angle'})
+    nds = nds.rename({'gamma': 'za'})
     if plot:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize = (12, 6), dpi=300)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), dpi=300)
         fig.tight_layout()
 
         vmin = np.nanpercentile(ds.values, 1)
         vmax = np.nanpercentile(ds.values, 99)
-        ds.plot(ax = ax1, vmin=vmin, vmax=vmax)
+        ds.plot(ax=ax1, vmin=vmin, vmax=vmax)
         ax1.set_title('Zenith Angle (NL)')
 
         vmin = np.nanpercentile(timg, 1)
         vmax = np.nanpercentile(timg, 99)
-        nds.plot(ax = ax2, vmin=vmin, vmax=vmax)
+        nds.plot(ax=ax2, vmin=vmin, vmax=vmax)
         ax2.set_title('Zenith Angle (Warped Linear)')
-    
-    if returnboth: return nds, ds
-    else: return nds
+
+    if returnboth:
+        return nds, ds
+    else:
+        return nds
 
 
 # %%
@@ -412,7 +424,7 @@ def main(parser: argparse.ArgumentParser):
     predictor = MisCurveRemover(model)  # line straightening
 
     if args.dest_prefix is None:
-        args.dest_prefix = model.get_instrument().system.replace(' ','').lower()
+        args.dest_prefix = model.get_instrument().system.replace(' ', '').lower()
 
     # Check that user provided windows can be processed
     if args.windows is not None and isinstance(args.windows, list):
@@ -515,21 +527,31 @@ def main(parser: argparse.ArgumentParser):
 
     for key, filelist in main_flist.items():
         # print(f'[{key:%Y-%m-%d}] Starting conversion...')
-
+        yymm = f'{key:%Y%m}'
         yymmdd = f'{key:%Y%m%d}'
         prefix = args.dest_prefix
+        #each month is a new directory at dest 
+        os.makedirs(os.path.join(args.dest, yymm), exist_ok=True)
         # file names/paths of the complete file of a given day and window
-        outfnames = [f"{prefix}_{yymmdd}_{window}.nc" for window in windows]
+        outfnames = [f"{yymm}/{prefix}_{yymmdd}_{window}*.nc" for window in windows]
         outfpaths = [os.path.join(args.dest, outfname)
                      for outfname in outfnames]
 
+        # check if any of the output files already exist
+        skip_processing = False
         for pathidx, outfpath in enumerate(outfpaths):
-            if os.path.exists(outfpath):
+            numfiles = glob(outfpath)
+            print(f'{outfpath} has {len(numfiles)} related files')
+            if len(numfiles) > 0:
                 if not args.overwrite:
-                    print(f'{outfnames[pathidx]} already exists. skipping.')
+                    for i in glob(outfpath):
+                        print(f'{i} already exists. skipping.')
+                        skip_processing = True
                     continue
                 else:
                     os.remove(outfpath)
+        if skip_processing:
+            continue  # skip processing if the output files already exist and overwrite is False
 
         absstart = perf_counter_ns()
         # split 1 day into len(filesperday)/n loops
@@ -587,7 +609,8 @@ def main(parser: argparse.ArgumentParser):
                     )
                     # 5. straighten img
                     for window in windows:
-                        data = predictor.straighten_image(data_, window,coord = 'Slit')
+                        data = predictor.straighten_image(
+                            data_, window, coord='Slit')
                         data = convert_gamma_to_zenithangle(data)
                         # 6. Save
                         data = data.expand_dims(
@@ -598,15 +621,13 @@ def main(parser: argparse.ArgumentParser):
                         data['ccdtemp'] = xr.Variable(
                             dims='tstamp', data=[temp], attrs={'unit': 'C'}
                         )
-                
+
                         output[window].append(data)
 
             # Create Dataset and save
             for window in windows:
-                sub_outfname = f"{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
+                sub_outfname = f"{yymm}/{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
                 sub_outfpath = os.path.join(args.dest, sub_outfname)
-                print(args.dest)
-                print(sub_outfpath)
                 ds: xr.Dataset = xr.concat(output[window], dim='tstamp')
                 gc.collect()
                 ds.attrs.update(
