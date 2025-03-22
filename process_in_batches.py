@@ -6,9 +6,11 @@ import shutil
 import time
 import numpy as np
 import sys
+from glob import glob
 #%%
 
-smbdir = '/run/user/1000/gvfs/smb-share:server=10.7.3.211,share=raw/hmsorigin/'
+smbdir = '/run/user/1000/gvfs/smb-share:server=10.7.3.211,share=raw/hmsorigin'
+os.listdir(smbdir)
 #%%
 localdir = 'rawdata'
 #%%
@@ -18,12 +20,12 @@ overwrite = False
 windows = '7774,5577,6300,4278,6563,4861'
 model =  'hmsa_origin_ship.json' 
 destdir = '../data/l1a'  # Destination directory for converted data
-chunksize = '20'  # Modify as needed (number of files per batch for the converter)
+chunksize = '100'  # Modify as needed (number of files per batch for the converter)
 command = [
     'python', converter_script,
     '--windows',windows,
     '--model', model,
-    '--chunksize', chunksize,
+    '--chunksize', chunksize, 
     localdir,
     destdir,
 ]
@@ -54,10 +56,13 @@ def process_in_batches(smb_raw_dir, local_raw_dir, batch_size=10):
     # Process directories in batches of batch_size
     for i in range(0, len(all_dirs), batch_size):
         batch = all_dirs[i:i + batch_size]
-        
+        batchdates = dirlist[i:i+batch_size]
         # Copy each directory to the local raw folder using rsync
-        print(f'Dowloading batch: {dirlist[i:i+batch_size]} ')
-        for dir_path in batch:
+        print(f'Dowloading batch: {batchdates} ')
+        for idx, dir_path in enumerate(batch):
+            if len(glob(os.path.join(destdir,f'*{batchdates[idx]}*.nc'))) > 0:
+                print(f"Skipping download {dir_path} as it has already been processed.")
+                continue
             copy_directory_with_rsync(dir_path, local_raw_dir)
         
         try:
@@ -89,9 +94,4 @@ def process_in_batches(smb_raw_dir, local_raw_dir, batch_size=10):
         time.sleep(2)
 
 # Run the batch processing
-process_in_batches(smbdir, localdir, batch_size=1)
-# %%
-# %%
-# %%
-
-# %%
+process_in_batches(smbdir, localdir, batch_size=5)
