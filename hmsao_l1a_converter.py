@@ -348,10 +348,19 @@ parser.add_argument(
     help='Prefix of the saved L1 data finename.'
 )
 
+
+def str2bool(value: str) -> bool:
+    if value.lower() in ('true', '1', 't', 'y', 'yes'):
+        return True
+    elif value.lower() in ('false', '0', 'f', 'n', 'no'):
+        return False
+    raise ValueError("Invalid boolean value: {}".format(value))
+
+
 parser.add_argument(
     '--overwrite',
     required=False,
-    type=bool,
+    type=str2bool,
     default=False,
     nargs='?',
     help='If you want to rewrite an existing file, then True. Defaults to False.'
@@ -401,6 +410,16 @@ parser.add_argument(
     default=10,  # fix this later depending on what the ideal number of files should be per chunk
     nargs='?',
     help='Number of files per chunk.'
+)
+
+parser.add_argument(
+    '--readnoise',
+    # metavar = 'NAME',
+    required=False,
+    type=float,
+    default=None,
+    nargs='?',
+    help='Readnoise value (ADU/s) to be used for readnoise correction.'
 )
 # %%
 
@@ -477,6 +496,10 @@ def main(parser: argparse.ArgumentParser):
     print(f'Start DateTime: {start_date}')
     print(f'End DateTime: {end_date} \n')
 
+    # readnoise option
+    readnoise = None
+    rn_computed = {}
+
     # break up into individual days, day is midnight to midnight
     st_date = start_date.date() - timedelta(days=1)
     lst_date = end_date.date() + timedelta(days=1)
@@ -530,10 +553,11 @@ def main(parser: argparse.ArgumentParser):
         yymm = f'{key:%Y%m}'
         yymmdd = f'{key:%Y%m%d}'
         prefix = args.dest_prefix
-        #each month is a new directory at dest 
+        # each month is a new directory at dest
         os.makedirs(os.path.join(args.dest, yymm), exist_ok=True)
         # file names/paths of the complete file of a given day and window
-        outfnames = [f"{yymm}/{prefix}_{yymmdd}_{window}*.nc" for window in windows]
+        outfnames = [
+            f"{yymm}/{prefix}_{yymmdd}_{window}*.nc" for window in windows]
         outfpaths = [os.path.join(args.dest, outfname)
                      for outfname in outfnames]
 
@@ -543,120 +567,151 @@ def main(parser: argparse.ArgumentParser):
             numfiles = glob(outfpath)
             print(f'{outfpath} has {len(numfiles)} related files')
             if len(numfiles) > 0:
-                if not args.overwrite:
+                print(f'overwrite = {args.overwrite}')
+                if args.overwrite:
                     for i in glob(outfpath):
-                        print(f'{i} already exists. skipping.')
-                        skip_processing = True
-                    continue
-                else:
-                    os.remove(outfpath)
-        if skip_processing:
-            continue  # skip processing if the output files already exist and overwrite is False
+                        print(f'{i} removed.')
+                        os.remove(i)
+                elif not args.overwrite:  # if overwrite is false and file exist
+                    for i in glob(outfpath):
+                        print(f'{i} already exists, skipping')
+                    skip_processing = True
 
-        absstart = perf_counter_ns()
-        # split 1 day into len(filesperday)/n loops
-        n = args.chunksize
-        chunks = ceil(len(filelist) / n)
-        ndigits = ceil(np.log10(chunks))
-        iterlim = chunks * n
-        # subfilelists = [filelist[i:i+n] for i in np.arange(0, len(filelist), n)]
-        print(f'Number of chunks of day: {chunks}')
-        imgsize = (len(predictor.beta_grid), len(predictor.gamma_grid))
-        # for subidx, sublist in enumerate(subfilelists):
-        for subidx in range(chunks):
-            output = {k: [] for k in windows}
-            sublist = filelist[subidx*n:(subidx + 1)*n]
-            for _, fn in enumerate(tqdm(sublist, desc=f'{key:%Y-%m-%d} - [{subidx+1:0{ndigits}}/{chunks}]')):
-                # initialize the index of the hdul data using the first file
-                # key = 'IMAGE'  # use hdul.info() to see all keys in file
-                with fits.open(fn) as hdul:
-                    hdu = hdul['IMAGE']
-                    header = hdu.header
-                    tstamp = get_tstamp_from_hdu(hdu)  # s
-                    ststamp = datetime.fromtimestamp(tstamp, tz=pytz.utc)
-                    exposure = get_exposure_from_hdu(hdu)  # s
-                    temp = header['CCD-TEMP']  # C
-                    # 1. get img
-                    data = np.asarray(hdu.data, dtype=float)  # counts
-                    # 1a. hot pixel correction for long exposures
-                    _, data = find_outlier_pixels(data)
-                    # 2. dark/bias correction
-                    if darkds is not None:
-                        dark = np.asarray(
-                            darkds['darkrate'].values, dtype=float)
-                        bias = np.asarray(darkds['bias'].values, dtype=float)
-                        data -= bias + dark * exposure  # counts
-                    # 3. total counts -> counts.sec
-                    data = data/exposure  # counts/sec
-                    # 4. Crop and resize image
-                    data = Image.fromarray(data)
-                    data = data.rotate(-.311,
-                                       resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
-                    data = data.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-                    image = Image.new('F', imgsize, color=np.nan)
-                    image.paste(data, (110, 410))
-                    data = np.asarray(image).copy()
-                    del image
-                    # array -> DataArray
-                    data_ = xr.DataArray(
-                        data,
-                        dims=['gamma', 'beta'],
-                        coords={
-                            'gamma': predictor.gamma_grid,
-                            'beta': predictor.beta_grid
-                        },
-                        attrs={'unit': 'ADU/s'}
+        if not skip_processing:
+            absstart = perf_counter_ns()
+            # split 1 day into len(filesperday)/n loops
+            n = args.chunksize
+            chunks = ceil(len(filelist) / n)
+            ndigits = ceil(np.log10(chunks))
+            iterlim = chunks * n
+            # subfilelists = [filelist[i:i+n] for i in np.arange(0, len(filelist), n)]
+            # print(f'Number of chunks of day: {chunks}')
+            imgsize = (len(predictor.beta_grid), len(predictor.gamma_grid))
+            # for subidx, sublist in enumerate(subfilelists):
+            for subidx in range(chunks):
+                output = {k: [] for k in windows}
+                sublist = filelist[subidx*n:(subidx + 1)*n]
+                for _, fn in enumerate(tqdm(sublist, desc=f'{key:%Y-%m-%d} - [{subidx+1:0{ndigits}}/{chunks}]')):
+                    # initialize the index of the hdul data using the first file
+                    # key = 'IMAGE'  # use hdul.info() to see all keys in file
+                    with fits.open(fn) as hdul:
+                        hdu = hdul['IMAGE']
+                        header = hdu.header
+                        tstamp = get_tstamp_from_hdu(hdu)  # s
+                        # ststamp = datetime.fromtimestamp(tstamp, tz=pytz.utc)
+                        exposure = get_exposure_from_hdu(hdu)  # s
+                        temp = header['CCD-TEMP']  # C
+                        # 1. get img
+                        data = np.asarray(hdu.data, dtype=float)  # counts
+                        # 1a. hot pixel correction for long exposures
+                        _, data = find_outlier_pixels(data)
+                        # 2. dark/bias correction
+                        if darkds is not None:
+                            dark = np.asarray(
+                                darkds['darkrate'].values, dtype=float)
+                            bias = np.asarray(
+                                darkds['bias'].values, dtype=float)
+                            data -= bias + dark * exposure  # counts
+                        elif readnoise is None and args.readnoise is not None:
+                            readnoise = np.full(
+                                data.shape, args.readnoise, dtype=float)
+                            readnoise = Image.fromarray(readnoise)
+                            readnoise = readnoise.rotate(-.311,
+                                                         resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
+                            readnoise = readnoise.transpose(
+                                Image.Transpose.FLIP_LEFT_RIGHT)
+                            image = Image.new('F', imgsize, color=np.nan)
+                            image.paste(readnoise, (110, 410))
+                            readnoise = np.asarray(image).copy()
+                            del image
+                            readnoise = xr.DataArray(
+                                readnoise,
+                                dims=['gamma', 'beta'],
+                                coords={
+                                    'gamma': predictor.gamma_grid,
+                                    'beta': predictor.beta_grid
+                                },
+                                attrs={'unit': 'ADU'}
+                            )
+
+                            for window in windows:
+                                rn = predictor.straighten_image(
+                                    readnoise, window, coord='Slit')
+                                rn_computed[window] = convert_gamma_to_zenithangle(rn)
+                        # 3. total counts -> counts.sec
+                        data = data/exposure  # counts/sec
+                        # 4. Crop and resize image
+                        data = Image.fromarray(data)
+                        data = data.rotate(-.311,
+                                           resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
+                        data = data.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                        image = Image.new('F', imgsize, color=np.nan)
+                        image.paste(data, (110, 410))
+                        data = np.asarray(image).copy()
+                        del image
+                        # array -> DataArray
+                        data_ = xr.DataArray(
+                            data,
+                            dims=['gamma', 'beta'],
+                            coords={
+                                'gamma': predictor.gamma_grid,
+                                'beta': predictor.beta_grid
+                            },
+                            attrs={'unit': 'ADU/s'}
+                        )
+                        # 5. straighten img
+                        for window in windows:
+                            data = predictor.straighten_image(
+                                data_, window, coord='Slit')
+                            data = convert_gamma_to_zenithangle(data)
+                            # 6. Save
+                            data = data.expand_dims(
+                                dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True)
+                            data['exposure'] = xr.Variable(
+                                dims='tstamp', data=[exposure], attrs={'unit': 's'}
+                            )
+                            data['ccdtemp'] = xr.Variable(
+                                dims='tstamp', data=[temp], attrs={'unit': 'C'}
+                            )
+
+                            output[window].append(data)
+
+                # Create Dataset and save
+                for window in windows:
+                    sub_outfname = f"{yymm}/{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
+                    sub_outfpath = os.path.join(args.dest, sub_outfname)
+                    ds: xr.Dataset = xr.concat(output[window], dim='tstamp')
+                    gc.collect()
+                    ds.attrs.update(
+                        dict(Description=" HMSA-O Straighted Spectra",
+                             ROI=f'{str(window)} nm',
+                             DataProcessingLevel='1A',
+                             # FileCreationDate=tnow,
+                             ObservationLocation='Swedish Institute of Space Physics/IRF (Kiruna, Sweden)',
+                             Note=f'data {is_dark_subtracted} dark corrected.',
+                             )
                     )
-                    # 5. straighten img
-                    for window in windows:
-                        data = predictor.straighten_image(
-                            data_, window, coord='Slit')
-                        data = convert_gamma_to_zenithangle(data)
-                        # 6. Save
-                        data = data.expand_dims(
-                            dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True)
-                        data['exposure'] = xr.Variable(
-                            dims='tstamp', data=[exposure], attrs={'unit': 's'}
-                        )
-                        data['ccdtemp'] = xr.Variable(
-                            dims='tstamp', data=[temp], attrs={'unit': 'C'}
-                        )
+                    if args.readnoise is not None:
+                        ds['noise'] = rn_computed[window] # readnoise]
+                    ds['intensity'].attrs['unit'] = 'ADU/s'
+                    ds['tstamp'].attrs['unit'] = 's'
+                    ds['tstamp'].attrs['description'] = 'Seconds since UNIX epoch 1970-01-01 00:00:00 UTC'
+                    encoding = {var: {'zlib': True}
+                                for var in (*ds.data_vars.keys(), *ds.coords.keys())}
 
-                        output[window].append(data)
-
-            # Create Dataset and save
-            for window in windows:
-                sub_outfname = f"{yymm}/{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
-                sub_outfpath = os.path.join(args.dest, sub_outfname)
-                ds: xr.Dataset = xr.concat(output[window], dim='tstamp')
+                    print('Saving %s...\t' % (sub_outfname), end='')
+                    sys.stdout.flush()
+                    tstart = perf_counter_ns()
+                    ds.to_netcdf(sub_outfpath, encoding=encoding)
+                    tend = perf_counter_ns()
+                    print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
+                del output
                 gc.collect()
-                ds.attrs.update(
-                    dict(Description=" HMSA-O Straighted Spectra",
-                         ROI=f'{str(window)} nm',
-                         DataProcessingLevel='1A',
-                         # FileCreationDate=tnow,
-                         ObservationLocation='Swedish Institute of Space Physics/IRF (Kiruna, Sweden)',
-                         Note=f'data {is_dark_subtracted} dark corrected.',
-                         )
-                )
+            absend = perf_counter_ns()
 
-                ds['intensity'].attrs['unit'] = 'ADU/s'
-                ds['tstamp'].attrs['unit'] = 's'
-                ds['tstamp'].attrs['description'] = 'Seconds since UNIX epoch 1970-01-01 00:00:00 UTC'
-                encoding = {var: {'zlib': True}
-                            for var in (*ds.data_vars.keys(), *ds.coords.keys())}
-
-                print('Saving %s...\t' % (sub_outfname), end='')
-                sys.stdout.flush()
-                tstart = perf_counter_ns()
-                ds.to_netcdf(sub_outfpath, encoding=encoding)
-                tend = perf_counter_ns()
-                print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
-            del output
-            gc.collect()
-        absend = perf_counter_ns()
-
-        print(f'\nDone: {key:%Y-%m-%d}, {(absend - absstart)*1e-9:.3f} s')
+            print(f'\nDone: {key:%Y-%m-%d}, {(absend - absstart)*1e-9:.3f} s')
+        else:
+            continue
 
 
 # %%
