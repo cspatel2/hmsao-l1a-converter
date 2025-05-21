@@ -419,7 +419,7 @@ parser.add_argument(
     type=float,
     default=None,
     nargs='?',
-    help='Readnoise value (ADU/s) to be used for readnoise correction.'
+    help='Readnoise value (ADU) to be used for readnoise correction.'
 )
 # %%
 
@@ -498,7 +498,6 @@ def main(parser: argparse.ArgumentParser):
 
     # readnoise option
     readnoise = None
-    rn_computed = {}
 
     # break up into individual days, day is midnight to midnight
     st_date = start_date.date() - timedelta(days=1)
@@ -589,7 +588,8 @@ def main(parser: argparse.ArgumentParser):
             imgsize = (len(predictor.beta_grid), len(predictor.gamma_grid))
             # for subidx, sublist in enumerate(subfilelists):
             for subidx in range(chunks):
-                output = {k: [] for k in windows}
+                out_countrate = {k: [] for k in windows}
+                out_noise = {k: [] for k in windows}
                 sublist = filelist[subidx*n:(subidx + 1)*n]
                 for _, fn in enumerate(tqdm(sublist, desc=f'{key:%Y-%m-%d} - [{subidx+1:0{ndigits}}/{chunks}]')):
                     # initialize the index of the hdul data using the first file
@@ -612,42 +612,16 @@ def main(parser: argparse.ArgumentParser):
                             bias = np.asarray(
                                 darkds['bias'].values, dtype=float)
                             data -= bias + dark * exposure  # counts
-                        elif readnoise is None and args.readnoise is not None:
-                            readnoise = np.full(
-                                data.shape, args.readnoise, dtype=float)
-                            readnoise = Image.fromarray(readnoise)
-                            readnoise = readnoise.rotate(-.311,
-                                                         resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
-                            readnoise = readnoise.transpose(
-                                Image.Transpose.FLIP_LEFT_RIGHT)
-                            image = Image.new('F', imgsize, color=np.nan)
-                            image.paste(readnoise, (110, 410))
-                            readnoise = np.asarray(image).copy()
-                            del image
-                            readnoise = xr.DataArray(
-                                readnoise,
-                                dims=['gamma', 'beta'],
-                                coords={
-                                    'gamma': predictor.gamma_grid,
-                                    'beta': predictor.beta_grid
-                                },
-                                attrs={'unit': 'ADU'}
-                            )
-
-                            for window in windows:
-                                rn = predictor.straighten_image(
-                                    readnoise, window, coord='Slit')
-                                rn_computed[window] = convert_gamma_to_zenithangle(rn)
+                        
                         # 3. total counts -> counts.sec
                         data = data/exposure  # counts/sec
                         # 4. Crop and resize image
                         data = Image.fromarray(data)
-                        data = data.rotate(-.311,
-                                           resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
+                        data = data.rotate(-.311,resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
                         data = data.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                         image = Image.new('F', imgsize, color=np.nan)
                         image.paste(data, (110, 410))
-                        data = np.asarray(image).copy()
+                        data = np.asarray(image).copy() 
                         del image
                         # array -> DataArray
                         data_ = xr.DataArray(
@@ -661,26 +635,51 @@ def main(parser: argparse.ArgumentParser):
                         )
                         # 5. straighten img
                         for window in windows:
-                            data = predictor.straighten_image(
-                                data_, window, coord='Slit')
+                            data = predictor.straighten_image(data_, window, coord='Slit')
                             data = convert_gamma_to_zenithangle(data)
                             # 6. Save
-                            data = data.expand_dims(
-                                dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True)
-                            data['exposure'] = xr.Variable(
-                                dims='tstamp', data=[exposure], attrs={'unit': 's'}
-                            )
-                            data['ccdtemp'] = xr.Variable(
-                                dims='tstamp', data=[temp], attrs={'unit': 'C'}
+                            data = data.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True)
+                            data['exposure'] = xr.Variable(dims='tstamp', data=[exposure], attrs={'unit': 's'})
+                            data['ccdtemp'] = xr.Variable(dims='tstamp', data=[temp], attrs={'unit': 'C'})
+                            out_countrate[window].append(data)
+                        
+                        if readnoise is None and args.readnoise is not None:
+                            readnoise = np.full(
+                                data_.data.shape, args.readnoise, dtype=float)
+                            readnoise = Image.fromarray(readnoise)
+                            readnoise = readnoise.rotate(-.311,
+                                                         resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
+                            readnoise = readnoise.transpose(
+                                Image.Transpose.FLIP_LEFT_RIGHT)
+                            image = Image.new('F', imgsize, color=np.nan)
+                            image.paste(readnoise, (110, 410))
+                            readnoise = np.asarray(image).copy()
+                            noise = np.sqrt(readnoise**2 + data_.data*exposure)/exposure
+                            del image
+                            noise = xr.DataArray(
+                                noise,
+                                dims=['gamma', 'beta'],
+                                coords={
+                                    'gamma': predictor.gamma_grid,
+                                    'beta': predictor.beta_grid
+                                },
+                                attrs={'unit': 'ADU'}
                             )
 
-                            output[window].append(data)
+                            for window in windows:
+                                rn = predictor.straighten_image(noise, window, coord='Slit')
+                                rn = convert_gamma_to_zenithangle(rn)
+                                rn = rn.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='noise', promote_attrs=True)
+                                rn['exposure'] = xr.Variable(dims='tstamp', data = [exposure], attrs={'unit': 's'})
+                                rn['ccdtemp'] = xr.Variable(dims='tstamp', data = [temp], attrs={'unit': 'C'})
+
+                                out_noise[window].append(rn)
 
                 # Create Dataset and save
                 for window in windows:
                     sub_outfname = f"{yymm}/{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
                     sub_outfpath = os.path.join(args.dest, sub_outfname)
-                    ds: xr.Dataset = xr.concat(output[window], dim='tstamp')
+                    ds: xr.Dataset = xr.concat(out_countrate[window], dim='tstamp')
                     gc.collect()
                     ds.attrs.update(
                         dict(Description=" HMSA-O Straighted Spectra",
@@ -692,8 +691,12 @@ def main(parser: argparse.ArgumentParser):
                              )
                     )
                     if args.readnoise is not None:
-                        ds['noise'] = rn_computed[window] # readnoise]
+                        ds = ds.merge(xr.concat(out_noise[window], dim='tstamp'))
                     ds['intensity'].attrs['unit'] = 'ADU/s'
+                    ds['intensity'].attrs['long_name'] = 'Line Intensity'
+                    ds['noise'].attrs['unit'] = 'ADU/s'
+                    ds['noise'].attrs['long_name'] = 'Noise'
+                    ds['noise'].attrs['eqn'] = r'Noise is given by sqrt{RN^2 + Counts}/exp'
                     ds['tstamp'].attrs['unit'] = 's'
                     ds['tstamp'].attrs['description'] = 'Seconds since UNIX epoch 1970-01-01 00:00:00 UTC'
                     encoding = {var: {'zlib': True}
@@ -705,7 +708,7 @@ def main(parser: argparse.ArgumentParser):
                     ds.to_netcdf(sub_outfpath, encoding=encoding)
                     tend = perf_counter_ns()
                     print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
-                del output
+                del out_countrate
                 gc.collect()
             absend = perf_counter_ns()
 
