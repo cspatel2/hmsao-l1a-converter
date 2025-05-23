@@ -643,7 +643,7 @@ def main(parser: argparse.ArgumentParser):
                             data['ccdtemp'] = xr.Variable(dims='tstamp', data=[temp], attrs={'unit': 'C'})
                             out_countrate[window].append(data)
                         
-                        if readnoise is None and args.readnoise is not None:
+                        if args.readnoise is not None:
                             readnoise = np.full(
                                 data_.data.shape, args.readnoise, dtype=float)
                             readnoise = Image.fromarray(readnoise)
@@ -663,18 +663,18 @@ def main(parser: argparse.ArgumentParser):
                                     'gamma': predictor.gamma_grid,
                                     'beta': predictor.beta_grid
                                 },
-                                attrs={'unit': 'ADU'}
+                                attrs={'unit': 'ADU/s'}
                             )
 
                             for window in windows:
                                 rn = predictor.straighten_image(noise, window, coord='Slit')
                                 rn = convert_gamma_to_zenithangle(rn)
                                 rn = rn.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='noise', promote_attrs=True)
-                                rn['exposure'] = xr.Variable(dims='tstamp', data = [exposure], attrs={'unit': 's'})
-                                rn['ccdtemp'] = xr.Variable(dims='tstamp', data = [temp], attrs={'unit': 'C'})
-
+                                # rn['exposure'] = xr.Variable(dims='tstamp', data = [exposure], attrs={'unit': 's'})
+                                # rn['ccdtemp'] = xr.Variable(dims='tstamp', data = [temp], attrs={'unit': 'C'})
                                 out_noise[window].append(rn)
-
+                
+                # print(len(out_noise[window]))    
                 # Create Dataset and save
                 for window in windows:
                     sub_outfname = f"{yymm}/{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
@@ -691,7 +691,9 @@ def main(parser: argparse.ArgumentParser):
                              )
                     )
                     if args.readnoise is not None:
-                        ds = ds.merge(xr.concat(out_noise[window], dim='tstamp'))
+                        # ds = ds.merge(xr.concat(out_noise[window], dim='tstamp'), fill_value=1)
+                        # ds['noise'] = xr.concat(out_noise[window], dim='tstamp')
+                        ds = xr.merge([ds, xr.concat(out_noise[window], dim='tstamp')])
                     ds['intensity'].attrs['unit'] = 'ADU/s'
                     ds['intensity'].attrs['long_name'] = 'Line Intensity'
                     ds['noise'].attrs['unit'] = 'ADU/s'
