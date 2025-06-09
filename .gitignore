@@ -3,3 +3,4 @@
 # zwoasi533_darkbias*.nc
 test_*.py
 #test that everything works again
+*pycache*
