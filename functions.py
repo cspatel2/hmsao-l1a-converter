@@ -8,7 +8,7 @@ import astropy.io.fits as fits
 import numpy as np
 import xarray as xr
 from typing import SupportsFloat as Numeric
-
+from skimage import transform
 
 def find_outlier_pixels(data, tolerance=3, worry_about_edges=True):
     # This function finds the hot or dead pixels in a 2D dataset.

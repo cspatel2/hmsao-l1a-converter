@@ -218,7 +218,7 @@ def main(parser: argparse.ArgumentParser):
             files = np.concatenate([files, f])
             tstamps = np.concatenate([tstamps, tstamp])
     if len(files) < 1:
-        raise ValueError('No .fit files in rootdir')
+        raise ValueError('No .fit(s) files in rootdir')
     else:
         print(f'Total Number of Files to Process: {len(files)}\n')
 
