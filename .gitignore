@@ -1,6 +1,5 @@
 *data*
+*res*
+*test*
+__pycache__
 *.nc
-# zwoasi533_darkbias*.nc
-test_*.py
-#test that everything works again
-*pycache*

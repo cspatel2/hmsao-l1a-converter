@@ -8,6 +8,7 @@ import gc
 from genericpath import isfile
 from math import ceil
 import os
+import re
 import sys
 from time import perf_counter_ns
 from matplotlib import pyplot as plt
@@ -151,7 +152,7 @@ parser.add_argument(
     # metavar = 'NAME',
     required=False,
     type=float,
-    default=None,
+    default=6,
     nargs='?',
     help='Readnoise value (ADU) to be used for readnoise correction.'
 )
@@ -208,7 +209,7 @@ def main(parser: argparse.ArgumentParser):
     for d in dirlist:
         f = glob(os.path.join(d, '*.fit*'))
         tstamp = get_tstamp_from_fname(f)
-        idx = np.argsort(tstamp)
+        idx = np.argsort(tstamp) #type: ignore
         tstamp = np.asarray(tstamp)[idx]
         f = np.asarray(f, dtype=object)[idx]
         if files is None:
@@ -216,16 +217,16 @@ def main(parser: argparse.ArgumentParser):
             tstamps = tstamp
         else:
             files = np.concatenate([files, f])
-            tstamps = np.concatenate([tstamps, tstamp])
-    if len(files) < 1:
+            tstamps = np.concatenate([tstamps, tstamp]) #type: ignore
+    if len(files) < 1: # type: ignore
         raise ValueError('No .fit(s) files in rootdir')
     else:
-        print(f'Total Number of Files to Process: {len(files)}\n')
+        print(f'Total Number of Files to Process: {len(files)}\n') # type: ignore
 
     # final list of files to process
     idx = np.argsort(tstamps)
     tstamps = np.sort(tstamps)
-    files = files[idx]
+    files = files[idx] # type: ignore
 
     
     if args.dates is not None: #if processing dates are given, then use those
@@ -239,8 +240,6 @@ def main(parser: argparse.ArgumentParser):
     print(f'Start DateTime: {start_date}')
     print(f'End DateTime: {end_date} \n')
 
-    # readnoise option
-    readnoise = None
 
     # break up into individual days, day is midnight to midnight
     st_date = start_date.date() - timedelta(days=1)
@@ -258,13 +257,12 @@ def main(parser: argparse.ArgumentParser):
         stop = start + timedelta(days=1)  # to midnight
         start_ts = start.timestamp()
         stop_ts = stop.timestamp()
-        valid_files = [f if start_ts <= t <
-                       stop_ts else '' for f, t in zip(files, tstamps)]
+        valid_files = [f if start_ts <= t < stop_ts else '' for f, t in zip(files, tstamps)]
         while '' in valid_files:
             valid_files.remove('')
         if len(valid_files) > 0:
             data_found = True
-            main_flist[_st_date] = valid_files
+            main_flist[_st_date] = valid_files # type: ignore
             all_files += valid_files
             if first:
                 print(_st_date, end='')
@@ -300,8 +298,7 @@ def main(parser: argparse.ArgumentParser):
         # file names/paths of the complete file of a given day and window
         outfnames = [
             f"{yymm}/{prefix}_{yymmdd}_{window}*.nc" for window in windows]
-        outfpaths = [os.path.join(args.dest, outfname)
-                     for outfname in outfnames]
+        outfpaths = [os.path.join(args.dest, outfname)for outfname in outfnames]
 
         # check if any of the output files already exist
         skip_processing = False
@@ -339,22 +336,36 @@ def main(parser: argparse.ArgumentParser):
                     # key = 'IMAGE'  # use hdul.info() to see all keys in file
                     with fits.open(fn) as hdul:
                         hdu = hdul['IMAGE']
-                        header = hdu.header
+                        header = hdu.header #type: ignore
                         tstamp = get_tstamp_from_hdu(hdu)  # s
                         # ststamp = datetime.fromtimestamp(tstamp, tz=pytz.utc)
                         exposure = get_exposure_from_hdu(hdu)  # s
                         temp = header['CCD-TEMP']  # C
-                        # 1. get img
+                        # 1. get img, and read noise
                         data = np.asarray(hdu.data, dtype=float)  # counts
-                        # 1a. hot pixel correction for long exposures
+                        readnoise = np.full(data.shape, args.readnoise, dtype=float) #counts
+                        
+
+                        # 1a. photometric calibration
+
+
+                        # 1b. hot pixel correction for long exposures
                         _, data = find_outlier_pixels(data)
+
                         # 2. dark/bias correction
                         if darkds is not None:
                             dark = np.asarray(
-                                darkds['darkrate'].values, dtype=float)
+                                darkds['countrate'].values, dtype=float)
+                            dark_noise = np.asarray(
+                                darkds['countrate_err'].values, dtype=float)
                             bias = np.asarray(
                                 darkds['bias'].values, dtype=float)
+                            bias_noise = np.asarray(
+                                darkds['bias_err'].values, dtype=float)
                             data -= bias + dark * exposure  # counts
+                            readnoise = np.sqrt(
+                                readnoise**2 + (dark_noise * exposure)**2 + bias_noise**2
+                            )
                         
                         # 3. total counts -> counts.sec
                         data = data/exposure  # counts/sec
@@ -379,43 +390,38 @@ def main(parser: argparse.ArgumentParser):
                         # 5. straighten img
                         for window in windows:
                             data = predictor.straighten_image(data_, window, coord='Slit')
-                            data = convert_gamma_to_zenithangle(data)
+                            data = convert_gamma_to_zenithangle(data) #type: ignore
                             # 6. Save
-                            data = data.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True)
+                            data = data.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True) # type: ignore
                             data['exposure'] = xr.Variable(dims='tstamp', data=[exposure], attrs={'unit': 's'})
                             data['ccdtemp'] = xr.Variable(dims='tstamp', data=[temp], attrs={'unit': 'C'})
                             out_countrate[window].append(data)
-                        
-                        if args.readnoise is not None:
-                            readnoise = np.full(
-                                data_.data.shape, args.readnoise, dtype=float)
-                            readnoise = Image.fromarray(readnoise)
-                            readnoise = readnoise.rotate(-.311,
-                                                         resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
-                            readnoise = readnoise.transpose(
-                                Image.Transpose.FLIP_LEFT_RIGHT)
-                            image = Image.new('F', imgsize, color=np.nan)
-                            image.paste(readnoise, (110, 410))
-                            readnoise = np.asarray(image).copy()
-                            noise = np.sqrt(readnoise**2 + data_.data*exposure)/exposure
-                            del image
-                            noise = xr.DataArray(
-                                noise,
-                                dims=['gamma', 'beta'],
-                                coords={
-                                    'gamma': predictor.gamma_grid,
-                                    'beta': predictor.beta_grid
-                                },
-                                attrs={'unit': 'ADU/s'}
-                            )
+                        # 7. readnoise propogation
+                        readnoise = Image.fromarray(readnoise)
+                        readnoise = readnoise.rotate(-.311,resample=Image.Resampling.BILINEAR, fillcolor=np.nan)
+                        readnoise = readnoise.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                        image = Image.new('F', imgsize, color=np.nan)
+                        image.paste(readnoise, (110, 410))
+                        readnoise = np.asarray(image).copy()
+                        readnoise = np.sqrt(readnoise**2 + data_.data*exposure)/exposure
+                        del image
+                        readnoise = xr.DataArray(
+                            readnoise,
+                            dims=['gamma', 'beta'],
+                            coords={
+                                'gamma': predictor.gamma_grid,
+                                'beta': predictor.beta_grid
+                            },
+                            attrs={'unit': 'ADU/s'}
+                        )
 
-                            for window in windows:
-                                rn = predictor.straighten_image(noise, window, coord='Slit')
-                                rn = convert_gamma_to_zenithangle(rn)
-                                rn = rn.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='noise', promote_attrs=True)
-                                # rn['exposure'] = xr.Variable(dims='tstamp', data = [exposure], attrs={'unit': 's'})
-                                # rn['ccdtemp'] = xr.Variable(dims='tstamp', data = [temp], attrs={'unit': 'C'})
-                                out_noise[window].append(rn)
+                        for window in windows:
+                            rn = predictor.straighten_image(readnoise, window, coord='Slit')
+                            rn = convert_gamma_to_zenithangle(rn)
+                            rn = rn.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='noise', promote_attrs=True)
+                            # rn['exposure'] = xr.Variable(dims='tstamp', data = [exposure], attrs={'unit': 's'})
+                            # rn['ccdtemp'] = xr.Variable(dims='tstamp', data = [temp], attrs={'unit': 'C'})
+                            out_noise[window].append(rn)
                 
                 # print(len(out_noise[window]))    
                 # Create Dataset and save
@@ -445,20 +451,15 @@ def main(parser: argparse.ArgumentParser):
                     encoding = {var: {'zlib': True}
                                 for var in (*ds.data_vars.keys(), *ds.coords.keys())}
 
-                    print('Saving %s...\t' % (sub_outfname), end='')
-                    sys.stdout.flush()
-                    tstart = perf_counter_ns()
-                    ds.to_netcdf(sub_outfpath, encoding=encoding)
-                    tend = perf_counter_ns()
-                    print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
                 del out_countrate
+                del readnoise
+                del data
                 gc.collect()
             absend = perf_counter_ns()
 
             print(f'\nDone: {key:%Y-%m-%d}, {(absend - absstart)*1e-9:.3f} s')
         else:
             continue
-
 
 # %%
 if __name__ == '__main__':

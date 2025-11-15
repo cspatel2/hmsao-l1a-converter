@@ -1,6 +1,4 @@
 # %% functions
-
-
 from datetime import datetime
 import os
 from typing import Iterable, List
