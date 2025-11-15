@@ -450,10 +450,14 @@ def main(parser: argparse.ArgumentParser):
                     ds['tstamp'].attrs['description'] = 'Seconds since UNIX epoch 1970-01-01 00:00:00 UTC'
                     encoding = {var: {'zlib': True}
                                 for var in (*ds.data_vars.keys(), *ds.coords.keys())}
+                    print('Saving %s...\t' % (sub_outfname), end='')
+                    sys.stdout.flush()
+                    tstart = perf_counter_ns()
+                    ds.to_netcdf(sub_outfpath, encoding=encoding)
+                    tend = perf_counter_ns()
+                    print(f'Done. [{(tend-tstart)*1e-9:.3f} s]')
 
                 del out_countrate
-                del readnoise
-                del data
                 gc.collect()
             absend = perf_counter_ns()
 
