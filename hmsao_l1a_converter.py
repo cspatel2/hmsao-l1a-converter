@@ -138,6 +138,16 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    '--slitsizeum',
+    # metavar = 'NAME',
+    required=True,
+    type=str,
+    # default = AS REQUIRED,
+    nargs='?',
+    help='Slit size (width) in micrometers.'
+)
+
+parser.add_argument(
     '--chunksize',
     # metavar = 'NAME',
     required=False,
@@ -161,6 +171,7 @@ parser.add_argument(
 
 def main(parser: argparse.ArgumentParser):
     args = parser.parse_args()
+    slitsize = args.slitsizeum
 
     # 0. Paths
     if os.path.exists(args.dest):
@@ -392,7 +403,7 @@ def main(parser: argparse.ArgumentParser):
                             data = predictor.straighten_image(data_, window, coord='Slit')
                             data = convert_gamma_to_zenithangle(data) #type: ignore
                             # 6. Save
-                            data = data.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='intensity', promote_attrs=True) # type: ignore
+                            data = data.expand_dims(dim={'tstamp': (tstamp,)}).to_dataset(name='countrate', promote_attrs=True) # type: ignore
                             data['exposure'] = xr.Variable(dims='tstamp', data=[exposure], attrs={'unit': 's'})
                             data['ccdtemp'] = xr.Variable(dims='tstamp', data=[temp], attrs={'unit': 'C'})
                             out_countrate[window].append(data)
@@ -433,6 +444,7 @@ def main(parser: argparse.ArgumentParser):
                     ds.attrs.update(
                         dict(Description=" HMSA-O Straighted Spectra",
                              ROI=f'{int(window)/10:0.1f} nm',
+                             slit_size_um= str(slitsize),
                              DataProcessingLevel='1A',
                              FileCreationDate=datetime.now().strftime("%m/%d/%Y, %H:%M:%S EDT"),
                              ObservationLocation='Swedish Institute of Space Physics/IRF (Kiruna, Sweden)',
@@ -441,8 +453,8 @@ def main(parser: argparse.ArgumentParser):
                     )
                     if args.readnoise is not None:
                         ds = xr.merge([ds, xr.concat(out_noise[window], dim='tstamp')])
-                    ds['intensity'].attrs['unit'] = 'ADU/s'
-                    ds['intensity'].attrs['long_name'] = 'Line Intensity'
+                    ds['countrate'].attrs['unit'] = 'ADU/s'
+                    ds['countrate'].attrs['long_name'] = 'Line Intensity'
                     ds['noise'].attrs['unit'] = 'ADU/s'
                     ds['noise'].attrs['long_name'] = 'Noise'
                     ds['noise'].attrs['eqn'] = r'Noise is given by sqrt{RN^2 + Counts}/exp'
