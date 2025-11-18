@@ -432,7 +432,7 @@ def main(parser: argparse.ArgumentParser):
                     gc.collect()
                     ds.attrs.update(
                         dict(Description=" HMSA-O Straighted Spectra",
-                             ROI=f'{str(window)} nm',
+                             ROI=f'{int(window)/10:0.1f} nm',
                              DataProcessingLevel='1A',
                              FileCreationDate=datetime.now().strftime("%m/%d/%Y, %H:%M:%S EDT"),
                              ObservationLocation='Swedish Institute of Space Physics/IRF (Kiruna, Sweden)',

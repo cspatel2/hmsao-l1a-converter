@@ -234,8 +234,7 @@ def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth:
         sign = 1
     else:
         sign = -1
-    linangles = np.linspace(np.min(angles), np.max(angles), len(
-        angles), endpoint=True)[::sign]  # array of linear zenith angles #type: ignore
+    linangles = np.linspace(np.min(angles), np.max(angles), len(angles), endpoint=True)[::sign]  # array of linear zenith angles #type: ignore
     mxo, myo = np.meshgrid(ds.wavelength.values, linangles)
     omin, omax = np.nanmin(mxo), np.nanmax(mxo)
     mxo -= omin  # shift to 0
