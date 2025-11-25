@@ -45,7 +45,7 @@ parser = argparse.ArgumentParser(
 #     help = 'DESCRIPTION OF ARGUMENT'
 #     )
 parser.add_argument(
-    'rootdir',
+    '--rootdir',
     metavar='rootdir',
     # required = True,
     type=str,
@@ -55,7 +55,7 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    'dest',
+    '--dest',
     metavar='dest',
     # required = False,
     type=str,
@@ -65,7 +65,7 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    'dest_prefix',
+    '--dest_prefix',
     metavar='dest_prefix',
     # required = False,
     type=str,
