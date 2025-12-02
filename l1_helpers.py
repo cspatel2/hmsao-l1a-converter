@@ -3,10 +3,12 @@ from datetime import datetime
 import os
 from typing import Iterable, List
 import astropy.io.fits as fits
+from matplotlib import pyplot as plt
 import numpy as np
 import xarray as xr
 from typing import SupportsFloat as Numeric
 from skimage import transform
+
 
 def find_outlier_pixels(data, tolerance=3, worry_about_edges=True):
     # This function finds the hot or dead pixels in a 2D dataset.
@@ -131,17 +133,17 @@ def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool = True) -> 
             else:
                 raise UserWarning('Default fallback')
         except Exception as e:
-            with fits.open(fname) as hdul: #type: ignore
-                if len(hdul) > 1: 
+            with fits.open(fname) as hdul:  # type: ignore
+                if len(hdul) > 1:
                     idx = 1
                 else:
                     idx = 0
 
                 hdu = hdul[idx]
-                if 'TIMESTAMP_S' in hdu.header:
-                    time_s = hdu.header['TIMESTAMP_S']
-                    if 'TIMESTAMP_NS' in hdu.header:
-                        time_ns = hdu.header['TIMESTAMP_NS']
+                if 'TIMESTAMP_S' in hdu.header:  # type: ignore
+                    time_s = hdu.header['TIMESTAMP_S']  # type: ignore
+                    if 'TIMESTAMP_NS' in hdu.header:  # type: ignore
+                        time_ns = hdu.header['TIMESTAMP_NS']  # type: ignore
                     else:
                         time_ns = 0
                     time = time_s + 1e-9*time_ns
@@ -149,7 +151,7 @@ def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool = True) -> 
                 else:
                     raise ValueError('Invalid file')
     else:
-        return list(map(get_tstamp_from_fname, fname)) #type: ignore
+        return list(map(get_tstamp_from_fname, fname))  # type: ignore
 
 
 def get_tstamp_from_hdu(hdu) -> Numeric:
@@ -194,13 +196,13 @@ def zenith_angle(gamma_mm: Numeric | Iterable[Numeric], f1: Numeric = 30, f2: Nu
 
     """
     if isinstance(gamma_mm, (int, float)):
-        return [zenith_angle(x) for x in gamma_mm] #type: ignore
-    if np.min(gamma_mm) < 0:
+        return [zenith_angle(x) for x in gamma_mm]  # type: ignore
+    if np.min(gamma_mm) < 0:  # type: ignore
         sign = -1
     else:
         sign = 1
-    num = -(gamma_mm-(sign*yoffset))*(f1+f2-D) #type: ignore
-    den = f1*f2 #type: ignore
+    num = -(gamma_mm-(sign*yoffset))*(f1+f2-D)  # type: ignore
+    den = f1*f2  # type: ignore
     return np.rad2deg(np.arctan(num/den))
 
 
@@ -223,18 +225,21 @@ def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth:
     angles = zenith_angle(ds.gamma.values)
 
     # coordinate map in the input image
-    mxi, myi = np.meshgrid(ds.wavelength.values, angles) #type: ignore
+    mxi, myi = np.meshgrid(ds.wavelength.values, angles)  # type: ignore
     imin, imax = np.nanmin(myi), np.nanmax(myi)
     myi -= imin  # shift to 0
     myi /= (imax - imin)  # normalize to 1
     myi *= (len(angles))  # adjust #type: ignore
 
     # coordinate map in the output image
-    if np.nanmin(angles) < 0: #type: ignore
+    if np.nanmin(angles) < 0:  # type: ignore
         sign = 1
     else:
         sign = -1
-    linangles = np.linspace(np.min(angles), np.max(angles), len(angles), endpoint=True)[::sign]  # array of linear zenith angles #type: ignore
+    linangles = np.linspace(
+        np.min(angles), np.max(angles), len(angles), # type: ignore
+        endpoint=True
+    )[::sign]  # array of linear zenith angles
     mxo, myo = np.meshgrid(ds.wavelength.values, linangles)
     omin, omax = np.nanmin(mxo), np.nanmax(mxo)
     mxo -= omin  # shift to 0
@@ -247,7 +252,10 @@ def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth:
     imap[1, :, :] = mxo  # output image map
 
     # nonlinear za -> linear za
-    timg = transform.warp(ds.values, imap, order=1, cval=np.nan) #type: ignore
+    timg = transform.warp(
+        ds.values, imap,
+        order=1, cval=np.nan,
+    )
 
     # replace gamma to raw za values
     ds['gamma'] = angles
@@ -255,17 +263,19 @@ def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth:
         {'unit': 'deg', 'long_name': 'Zenith Angle'})
     ds = ds.rename({'gamma': 'za'})
     # replace gamma to linear za values
-    nds.values = timg
+    nds.values = timg # type: ignore
     nds['gamma'] = linangles
     nds['gamma'] = nds['gamma'].assign_attrs(
         {'unit': 'deg', 'long_name': 'Zenith Angle'})
     nds = nds.rename({'gamma': 'za'})
     if plot:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), dpi=300) #type: ignore
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(12, 6), dpi=300
+        )
         fig.tight_layout()
 
-        vmin = np.nanpercentile(ds.values, 1) #type: ignore
-        vmax = np.nanpercentile(ds.values, 99) #type: ignore
+        vmin = np.nanpercentile(ds.values, 1)  # type: ignore
+        vmax = np.nanpercentile(ds.values, 99)  # type: ignore
         ds.plot(ax=ax1, vmin=vmin, vmax=vmax)
         ax1.set_title('Zenith Angle (NL)')
 
@@ -279,6 +289,7 @@ def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth:
     else:
         return nds
 
+
 def get_exposure_from_fn(fn: str) -> float:
     """ get the exposure in s from the filename for the filename formatted 'PREFIX_EXP.png'
 
@@ -287,5 +298,5 @@ def get_exposure_from_fn(fn: str) -> float:
 
     Returns:
         float: exposure in s.
-    """    
+    """
     return float(fn.strip('.png').split('_')[-1])

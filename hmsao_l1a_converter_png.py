@@ -22,7 +22,7 @@ from typing import Dict, Iterable, List, SupportsFloat as Numeric
 from skmpython import datetime_in_timezone
 from skimage import transform
 from misdesigner import MisInstrumentModel, MisCurveRemover
-from functions import *
+from l1a_converter.l1_helpers import *
 
 # %%
 PATH = os.path.dirname(os.path.realpath(__file__))
