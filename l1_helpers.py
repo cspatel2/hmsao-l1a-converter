@@ -1,6 +1,7 @@
 # %% functions
 from datetime import datetime
 import os
+from pathlib import Path
 from typing import Iterable, List
 import astropy.io.fits as fits
 from matplotlib import pyplot as plt
@@ -102,13 +103,16 @@ def find_outlier_pixels(data, tolerance=3, worry_about_edges=True):
     return hot_pixels, fixed_image
 
 
-def get_all_dirs(rootdir: str) -> list:
-    fdirs = os.listdir(rootdir)
+def get_all_dirs(rootdir: str|Path) -> list:
+    if isinstance(rootdir, str):
+        rootdir = Path(rootdir)
+    
+    fdirs = list(rootdir.iterdir())
     alldirs = []
     subdirsfound = False
     for d in fdirs:
-        path = os.path.join(rootdir, d)
-        if os.path.isdir(path):
+        path = d.resolve()
+        if path.is_dir():
             subdirsfound = True
             alldirs.append(path)
     if not subdirsfound:
@@ -117,6 +121,7 @@ def get_all_dirs(rootdir: str) -> list:
 
 
 def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool = True) -> Numeric | List[Numeric]:
+    
     if isinstance(fname, str):
         try:
             if use_name:

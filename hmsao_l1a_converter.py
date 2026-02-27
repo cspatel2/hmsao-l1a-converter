@@ -7,10 +7,13 @@ from datetime import datetime, timezone, timedelta
 import gc
 from genericpath import isfile
 from math import ceil
+from os import path
+from pathlib import Path
 import os
 import re
 import sys
 from time import perf_counter_ns
+from astropy import conf
 from matplotlib import pyplot as plt
 import numpy as np
 from PIL import Image
@@ -35,17 +38,17 @@ from l1_helpers import *
 
 @dataclass
 class L1AConfig:
-    rootdir: str
-    dest: str
-    dest_prefix: str
+    rootdir: str|Path
+    destdir: str|Path
+    dest_prefix: str|None
     overwrite: bool
     windows: List[str]
     dates: List[str]
-    dark: str
+    dark: str|Path|None
     slitsizeum: str
     chunksize: int
     readnoise: float
-    model: str = os.path.join(LOCALPATH, 'hmsa_origin_ship.json')
+    model: str|Path = Path(LOCALPATH) / 'hmsa_origin_ship.json'
 
 
 def list_of_strings(arg: str) -> List[str]:
@@ -64,43 +67,51 @@ def str2bool(value: str) -> bool:
 
 
 def main(config: L1AConfig):
+    config.rootdir = Path(config.rootdir).expanduser()
+    config.destdir = Path(config.destdir).expanduser()
+    config.dark = Path(config.dark).expanduser() if config.dark is not None else None
+    config.model = Path(config.model).expanduser()
+
+
     slitsize = config.slitsizeum
 
     # 0. Paths
-    if os.path.exists(config.dest):
-        if os.path.isfile(config.dest):
+
+    if config.destdir.is_file():
             print('Destination path provided is a file. Directory path required.')
             sys.exit()
     else:
-        os.makedirs(config.dest, exist_ok=True)
-    # print(f'destination dir set to: {config.dest}')
+        config.destdir.mkdir(parents=True, exist_ok=True)
+    print(f'destination dir set to: {config.destdir}\n')
 
     # 1. Check provided arguments and Initialize
 
     # Create model and confirm that the Instrument file provided works
-    model = MisInstrumentModel.load(config.model)
-    predictor = MisCurveRemover(model)  # line straightening
 
-    if config.dest_prefix is None:
-        config.dest_prefix = model.get_instrument().system.replace(' ', '').lower()
+    if config.model.is_file():
+        model = MisInstrumentModel.load(str(config.model))
+        predictor = MisCurveRemover(model)  # line straightening
     else:
-        if 'l1a' not in config.dest_prefix:
-            config.dest_prefix += '_l1a'
+        raise ValueError('Model file provided does not exist. Please provide a valid model file path.')
+
+    if config.dest_prefix is None and model is not None:
+        config.dest_prefix = model.get_instrument().system.replace(' ', '').lower()
+    if 'l1a' not in config.dest_prefix.lower():
+        config.dest_prefix = config.dest_prefix + '_l1a'
 
     # Check that user provided windows can be processed
     if config.windows is not None and isinstance(config.windows, list):
-        windows = [
-            window for window in config.windows if window in predictor.windows]
+        windows = [window for window in config.windows if window in predictor.windows]
         if len(windows) == 0:
             raise ValueError(
                 f'Invalid Window names: {config.windows}. Available window names are {predictor.windows}')
     else:
         windows = predictor.windows
 
-    print(f'Windows to be processed: {', '.join(windows)}')
+    print(f'Windows to be processed: {", ".join(windows)}')
 
     # check if root dir exists
-    if not os.path.isdir(config.rootdir):
+    if not config.rootdir.is_dir():
         print("Root Directory provided does not exist.")
         sys.exit()
 
@@ -111,7 +122,8 @@ def main(config: L1AConfig):
     print(f'Total Number of Directories in Rootdir: {len(dirlist)}')
     dirlist.sort()
     for d in dirlist:
-        f = glob(os.path.join(d, '*.fit*'))
+        f = list(d.glob('*.fit*'))
+        f = [str(i) for i in f if isfile(i)]
         tstamp = get_tstamp_from_fname(f)
         idx = np.argsort(tstamp)  # type: ignore
         tstamp = np.asarray(tstamp)[idx]
@@ -181,7 +193,7 @@ def main(config: L1AConfig):
         print('None')
     print('\n')
 
-    print(f'data will be saved to: {config.dest}\n')
+    print(f'data will be saved to: {config.destdir}\n')
 
     del idx, tstamps, files
     gc.collect()
@@ -201,12 +213,11 @@ def main(config: L1AConfig):
         yymmdd = f'{key:%Y%m%d}'
         prefix = config.dest_prefix
         # each month is a new directory at dest
-        os.makedirs(os.path.join(config.dest, yymm), exist_ok=True)
+        (config.destdir / yymm).mkdir(parents=True, exist_ok=True)
         # file names/paths of the complete file of a given day and window
         outfnames = [
             f"{yymm}/{prefix}_{yymmdd}_{window}*.nc" for window in windows]
-        outfpaths = [os.path.join(config.dest, outfname)
-                     for outfname in outfnames]
+        outfpaths = [str(config.destdir / outfname) for outfname in outfnames]
 
         # check if any of the output files already exist
         skip_processing = False
@@ -362,9 +373,8 @@ def main(config: L1AConfig):
                 # Create Dataset and save
                 for window in windows:
                     sub_outfname = f"{yymm}/{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
-                    sub_outfpath = os.path.join(config.dest, sub_outfname)
-                    ds: xr.Dataset = xr.concat(
-                        out_countrate[window], dim='tstamp')
+                    sub_outfpath = config.destdir / sub_outfname
+                    ds: xr.Dataset = xr.concat(out_countrate[window], dim='tstamp')
                     gc.collect()
                     ds.attrs.update(
                         dict(
@@ -378,8 +388,7 @@ def main(config: L1AConfig):
                         )
                     )
                     if config.readnoise is not None:
-                        ds = xr.merge(
-                            [ds, xr.concat(out_noise[window], dim='tstamp')])
+                        ds = xr.merge( [ds, xr.concat(out_noise[window], dim='tstamp')])
                     ds['countrate'].attrs['unit'] = 'ADU/s'
                     ds['countrate'].attrs['long_name'] = 'Line Intensity'
                     ds['noise'].attrs['unit'] = 'ADU/s'
@@ -424,7 +433,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--dest',
-        metavar='dest',
+        metavar='destdir',
         # required = False,
         type=str,
         default=os.getcwd(),
@@ -523,7 +532,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = L1AConfig(
         rootdir=args.rootdir,
-        dest=args.dest,
+        destdir=args.dest,
         dest_prefix=args.dest_prefix,
         overwrite=args.overwrite,
         windows=args.windows,
