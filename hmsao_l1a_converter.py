@@ -123,7 +123,6 @@ def main(config: L1AConfig):
     dirlist.sort()
     for d in dirlist:
         f = list(d.glob('*.fit*'))
-        f = [str(i) for i in f if isfile(i)]
         tstamp = get_tstamp_from_fname(f)
         idx = np.argsort(tstamp)  # type: ignore
         tstamp = np.asarray(tstamp)[idx]

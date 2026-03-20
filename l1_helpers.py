@@ -119,46 +119,6 @@ def get_all_dirs(rootdir: str|Path) -> list:
         alldirs.append(rootdir)
     return alldirs
 
-
-def get_tstamp_from_fname(fname: str | Iterable[str], use_name: bool = True) -> Numeric | List[Numeric]:
-    
-    if isinstance(fname, str):
-        try:
-            if use_name:
-                uname = os.path.basename(fname)
-                while True:
-                    name, ext = uname.rsplit('.', 1)
-                    if ext.isdecimal():
-                        break
-                    else:
-                        uname = name
-                time = datetime.strptime(
-                    f'{uname} +0000', '%Y%m%d%H%M%S.%f %z')
-                return time.timestamp()
-            else:
-                raise UserWarning('Default fallback')
-        except Exception as e:
-            with fits.open(fname) as hdul:  # type: ignore
-                if len(hdul) > 1:
-                    idx = 1
-                else:
-                    idx = 0
-
-                hdu = hdul[idx]
-                if 'TIMESTAMP_S' in hdu.header:  # type: ignore
-                    time_s = hdu.header['TIMESTAMP_S']  # type: ignore
-                    if 'TIMESTAMP_NS' in hdu.header:  # type: ignore
-                        time_ns = hdu.header['TIMESTAMP_NS']  # type: ignore
-                    else:
-                        time_ns = 0
-                    time = time_s + 1e-9*time_ns
-                    return time
-                else:
-                    raise ValueError('Invalid file')
-    else:
-        return list(map(get_tstamp_from_fname, fname))  # type: ignore
-
-
 def get_tstamp_from_hdu(hdu) -> Numeric:
     if 'TIMESTAMP_S' in hdu.header:
         time_s = hdu.header['TIMESTAMP_S']
@@ -169,7 +129,76 @@ def get_tstamp_from_hdu(hdu) -> Numeric:
         time = time_s + 1e-9*time_ns
         return time
     else:
-        raise ValueError('Invalid file')
+        raise Warning('Invalid file')
+
+
+def get_tstamp_from_fname(fname: str | Path|Iterable[str | Path], use_name: bool = True) -> Numeric | List[Numeric]:
+    if isinstance(fname, Iterable):
+        return [get_tstamp_from_fname(f, use_name=use_name) for f in fname] # type: ignore
+    
+    if isinstance(fname, str): fname = Path(fname)
+    try:
+        if use_name:
+            uname = fname.stem.replace('_', '')  # type: ignore
+            time = datetime.strptime(f'{uname} +0000', '%Y%m%d%H%M%S.%f %z')
+            return time.timestamp()
+        else:
+            raise UserWarning('Default fallback')
+    except Exception as e:
+        try:             
+            with fits.open(fname) as hdul:  # type: ignore
+                if len(hdul) > 1:
+                    idx = 1
+                else:
+                    idx = 0
+
+                hdu = hdul[idx]
+                return get_tstamp_from_hdu(hdu)
+        except Exception as e:
+            print(f'Invalid file: {fname} \nError: {e}')
+            return np.nan
+
+
+
+
+    # if isinstance(fname, str):
+    #     try:
+    #         if use_name:
+    #             uname = os.path.basename(fname)
+    #             while True:
+    #                 name, ext = uname.rsplit('.', 1)
+    #                 if ext.isdecimal():
+    #                     break
+    #                 else:
+    #                     uname = name
+    #             try:
+    #                 time = datetime.strptime(f'{uname} +0000', '%Y%m%d%H%M%S.%f %z')
+    #             return time.timestamp()
+    #         else:
+    #             raise UserWarning('Default fallback')
+    #     except Exception as e:
+    #         with fits.open(fname) as hdul:  # type: ignore
+    #             if len(hdul) > 1:
+    #                 idx = 1
+    #             else:
+    #                 idx = 0
+
+    #             hdu = hdul[idx]
+    #             if 'TIMESTAMP_S' in hdu.header:  # type: ignore
+    #                 time_s = hdu.header['TIMESTAMP_S']  # type: ignore
+    #                 if 'TIMESTAMP_NS' in hdu.header:  # type: ignore
+    #                     time_ns = hdu.header['TIMESTAMP_NS']  # type: ignore
+    #                 else:
+    #                     time_ns = 0
+    #                 time = time_s + 1e-9*time_ns
+    #                 return time
+    #             else:
+    #                 raise ValueError('Invalid file')
+    # else:
+    #     return list(map(get_tstamp_from_fname, fname))  # type: ignore
+
+
+
 
 
 def get_exposure_from_hdu(hdu) -> Numeric:
