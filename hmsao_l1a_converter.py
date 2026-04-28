@@ -319,7 +319,7 @@ def main(config: L1AConfig):
                             data = predictor.straighten_image(
                                 data_, window, coord='Slit'
                             )
-                            data = convert_gamma_to_zenithangle(
+                            data = convert_y_to_zenithangle(
                                 data)  # type: ignore
                             # 6. Save
                             data = data.expand_dims(  # type: ignore
@@ -357,7 +357,7 @@ def main(config: L1AConfig):
                         for window in windows:
                             rn = predictor.straighten_image(
                                 readnoise, window, coord='Slit')
-                            rn = convert_gamma_to_zenithangle(
+                            rn = convert_y_to_zenithangle(
                                 rn)  # type: ignore
                             rn = rn.expand_dims(  # type: ignore
                                 dim={'tstamp': (tstamp,)}

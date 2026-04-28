@@ -280,7 +280,7 @@ def main(parser: argparse.ArgumentParser):
                 # 5. straighten img
                 for window in windows:
                     data = predictor.straighten_image(data_, window, coord='Slit')
-                    data = convert_gamma_to_zenithangle(data)
+                    data = convert_y_to_zenithangle(data)
                     # 6. Save
                     data = data.expand_dims(dim={'idx': (idx,)}).to_dataset(name='intensity', promote_attrs=True)
                     data['exposure'] = xr.Variable(dims='idx', data=[exposure], attrs={'unit': 's'})
@@ -311,7 +311,7 @@ def main(parser: argparse.ArgumentParser):
 
                     for window in windows:
                         rn = predictor.straighten_image(noise, window, coord='Slit')
-                        rn = convert_gamma_to_zenithangle(rn)
+                        rn = convert_y_to_zenithangle(rn)
                         rn = rn.expand_dims(dim={'idx': (idx,)}).to_dataset(name='noise', promote_attrs=True)
                         # rn['exposure'] = xr.Variable(dims='tstamp', data = [exposure], attrs={'unit': 's'})
                         # rn['ccdtemp'] = xr.Variable(dims='tstamp', data = [temp], attrs={'unit': 'C'})

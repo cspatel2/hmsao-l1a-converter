@@ -240,7 +240,7 @@ def zenith_angle(gamma_mm: Numeric | Iterable[Numeric], f1: Numeric = 30, f2: Nu
     return np.rad2deg(np.arctan(num/den))
 
 
-def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth: bool = False):
+def convert_y_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth: bool = False):
     """converts gamma(mm) in slit coordinate to zenith angle (degrees) in a straightened dataset.
 
     Args:
@@ -334,3 +334,98 @@ def get_exposure_from_fn(fn: str) -> float:
         float: exposure in s.
     """
     return float(fn.strip('.png').split('_')[-1])
+
+def convert_y_to_zenithangle(ids: xr.Dataset, plot: bool = False, returnboth: bool = False):
+    """converts y_slit(mm) in slit coordinate to zenith angle (degrees) in a straightened dataset.
+
+    Args:
+        ds (xr.Dataset): straightened dataset.
+        plot (bool, optional): if True, left plot is raw zenith angle and right plot is linearized zenith angle. Defaults to False.
+        returnboth (bool, optional): if True, returns both datasets i.e. with raw (non linear) zenith angle and second with linear zenith angles. If false, only returns dataset with linear zenith angles. Defaults to False.
+
+    Returns:
+        _type_: dataset with y_slit(mm) replaced with zenith angle (deg)
+                Note: calculated zenith angles are non-linear b/c of arctann(). This is corrected using ndimage.transform.warp() to a linearized zenith angles.
+    """
+    # y_slit -> zenith angle
+    center = (np.abs(ids.y_slit.max() - ids.y_slit.min())/2).values
+    angles = np.array(zenith_angle(ids.y_slit.values, yoffset=center))
+
+    # coordinate map in the input image
+    mxi, myi = np.meshgrid(ids.wavelength.values, angles)  # type: ignore
+    imin, imax = np.nanmin(myi), np.nanmax(myi)
+    myi -= imin  # shift to 0
+    myi /= (imax - imin)  # normalize to 1
+    myi *= (len(angles))  # adjust #type: ignore
+
+    # coordinate map in the output image
+    if np.nanmin(angles) < 0:  # type: ignore
+        sign = 1
+    else:
+        sign = -1
+    linangles = np.linspace(
+        np.min(angles), np.max(angles), len(angles), # type: ignore
+        endpoint=True
+    )[::sign]  # array of linear zenith angles
+    mxo, myo = np.meshgrid(ids.wavelength.values, linangles)
+    omin, omax = np.nanmin(mxo), np.nanmax(mxo)
+    mxo -= omin  # shift to 0
+    mxo /= (omax - omin)  # normalize to 1
+    mxo *= (len(ids.wavelength.values))  # adjust
+
+    # inverse map
+    imap = np.zeros((2, *(ids.shape)), dtype=float)
+    imap[0, :, :] = myi  # input image map
+    imap[1, :, :] = mxo  # output image map
+
+    # nonlinear za -> linear za
+    timg = transform.warp(
+        ids.values, imap,
+        order=1, cval=np.nan,
+    )
+    plt.figure()
+    plt.plot(angles)
+    plt.plot(linangles)
+    #add za coordinate to the original dataset
+    
+    ids = ids.assign_coords({'za': ('y',angles)})
+    ids['za'] = ids['za'].assign_attrs(
+        {'unit': 'deg', 'long_name': 'Zenith Angle'})
+    ids = ids.swap_dims({'y': 'za'})
+    
+
+    #create modified dataset
+    nds = ids.copy()
+    
+    # replace za to linear za values
+    nds.values = timg # type: ignore
+    nds = nds.assign_coords({'za': linangles})  
+
+    # drop all the extra coordinates
+    nds = nds.drop_vars([d for d in nds.coords if 'y' in d])
+
+    if plot:
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(12, 6), dpi=300
+        )
+        fig.tight_layout()
+
+        vmin = np.nanpercentile(ids.values, 1)  # type: ignore
+        vmax = np.nanpercentile(ids.values, 99)  # type: ignore
+        ids.plot(ax=ax1, vmin=vmin, vmax=vmax)
+        ax1.set_title('Zenith Angle (NL)')
+
+        vmin = np.nanpercentile(timg, 1)
+        vmax = np.nanpercentile(timg, 99)
+        nds.plot(ax=ax2, vmin=vmin, vmax=vmax)
+        ax2.set_title('Zenith Angle (Warped Linear)')
+
+        # plt.figure()
+        # plt.plot(ids.za.values, label='Non-linear Zenith Angle')  # type: ignore
+        # plt.plot(nds.za.values, label='Linear Zenith Angle')  # type: ignore
+        # plt.legend()
+        
+    if returnboth:
+        return nds, ids
+    else:
+        return nds
