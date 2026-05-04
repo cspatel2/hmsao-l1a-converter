@@ -41,7 +41,6 @@ from l1_helpers import *
 
 # %%
 
-
 @dataclass
 class L1AConfig:
     rootdir: str|Path
@@ -288,11 +287,11 @@ def main(config: L1AConfig):
                             bias_noise = np.asarray(
                                 darkds['bias_err'].values, dtype=float)
                             data -= bias + dark * exposure  # counts
+                            data = np.clip(data, a_min=0, a_max=None)  # set negative values to 0 after dark/bias subtraction
                             readnoise = np.sqrt(
                                 readnoise**2 +
                                 (dark_noise * exposure)**2 + bias_noise**2
                             )
-
                         # 3. total counts -> counts.sec
                         # 4. Crop and resize image
                         # 5. straighten img

@@ -240,7 +240,7 @@ def zenith_angle(gamma_mm: Numeric | Iterable[Numeric], f1: Numeric = 30, f2: Nu
     return np.rad2deg(np.arctan(num/den))
 
 
-def convert_y_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth: bool = False):
+def convert_gamma_to_zenithangle(ds: xr.Dataset, plot: bool = False, returnboth: bool = False):
     """converts gamma(mm) in slit coordinate to zenith angle (degrees) in a straightened dataset.
 
     Args:
@@ -383,9 +383,6 @@ def convert_y_to_zenithangle(ids: xr.Dataset, plot: bool = False, returnboth: bo
         ids.values, imap,
         order=1, cval=np.nan,
     )
-    plt.figure()
-    plt.plot(angles)
-    plt.plot(linangles)
     #add za coordinate to the original dataset
     
     ids = ids.assign_coords({'za': ('y',angles)})
