@@ -426,3 +426,128 @@ def convert_y_to_zenithangle(ids: xr.Dataset, plot: bool = False, returnboth: bo
         return nds, ids
     else:
         return nds
+    
+def apply_spatial_and_spectral_calibration(ids: xr.Dataset, new_wavelength: np.ndarray, plot: bool = False, returnboth: bool = False):
+    """
+    Convert y_slit -> zenith angle (linearized) AND remap wavelength grid.
+
+    Args:
+        ids (xr.DataArray): input data with dims (y, wavelength)
+        new_wavelength (np.ndarray): desired wavelength grid (same length as input)
+        plot (bool): diagnostic plot
+        returnboth (bool): return both original (ZA) and transformed dataset
+
+    Returns:
+        xr.DataArray: transformed dataset with dims (za, wavelength)
+    """
+
+    # y -> zenith angle (nonlinear)
+    center = (np.abs(ids.y_slit.max() - ids.y_slit.min()) / 2).values
+    angles = np.array(zenith_angle(ids.y_slit.values, yoffset=center))
+
+    rows, cols = ids.shape
+
+    # define linear ZA grid
+    linangles = np.linspace(
+        np.min(angles),
+        np.max(angles),
+        rows,
+        endpoint=True
+    )
+
+    # build ZA inverse map
+    row_idx = np.arange(rows)
+    r_in = np.zeros((rows, cols))
+
+    for c in range(cols):
+        r_in[:, c] = np.interp(
+            linangles,   # output ZA (linear)
+            angles,      # input ZA (nonlinear)
+            row_idx      # input pixel indices
+        )
+
+    # wavelength inverse map
+    wl_in = new_wavelength #  once the spectra is corrected, this would the wavelength grid of the input data
+    # input wavelength grid may not be uniform, so we interpolate to find the pixel indices corresponding to the desired output wavelength grid
+    wl_out = np.linspace(
+        np.min(new_wavelength),
+        np.max(new_wavelength),
+        cols,
+        endpoint=True
+    )
+    wl_out = wl_out
+    col_idx = np.arange(cols)
+    c_in = np.zeros((rows, cols))
+
+    # wavelength is same for all rows
+    for r in range(rows):
+        c_in[r, :] = np.interp(
+            wl_out,   # output wavelength
+            wl_in,    # input wavelength grid
+            col_idx   # input pixel indices
+        )
+
+    # combine into inverse map
+    imap = np.zeros((2, rows, cols), dtype=float)
+    imap[0] = r_in   # row mapping (ZA)
+    imap[1] = c_in   # column mapping (wavelength)
+
+
+    # warp
+    timg = transform.warp(
+        ids.values,
+        imap,
+        order=1,
+        cval=np.nan,
+        preserve_range=True
+    )
+
+    # assign coordinates
+    # original dataset with ZA (nonlinear)
+    ids_za = ids.assign_coords({'za': ('y', angles)})
+    ids_za['za'].attrs = {'unit': 'deg', 'long_name': 'Zenith Angle'}
+    ids_za = ids_za.swap_dims({'y': 'za'})
+
+    # transformed dataset
+    nds = xr.DataArray(
+        timg,
+        dims=('za', 'wavelength'),
+        coords={
+            'za': linangles,
+            'wavelength': wl_out
+        },
+        attrs=ids.attrs
+    )
+
+    if plot:
+        plt.figure()
+        plt.plot(angles, label="original ZA")
+        plt.plot(linangles, label="linear ZA")
+        plt.legend()
+        plt.title("Zenith Angle Mapping")
+
+        plt.figure()
+        plt.plot(ids.wavelength.values, label="original wavelength")  # type: ignore
+        plt.plot(nds.wavelength.values, label="calibrated wavelength")
+        plt.legend()
+        plt.title("Wavelength Mapping")
+
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(12, 6), dpi=300
+        )
+        fig.tight_layout()
+
+        vmin = np.nanpercentile(ids.values, 1)  # type: ignore
+        vmax = np.nanpercentile(ids.values, 99)  # type: ignore
+        ids.plot(ax=ax1, vmin=vmin, vmax=vmax)
+        ax1.set_title('Zenith Angle (NL)')
+
+        vmin = np.nanpercentile(timg, 1)
+        vmax = np.nanpercentile(timg, 99)
+        nds.plot(ax=ax2, vmin=vmin, vmax=vmax)
+        ax2.set_title('Zenith Angle (Warped Linear)')
+
+    if returnboth:
+        return ids_za, nds
+    else:
+        return nds
