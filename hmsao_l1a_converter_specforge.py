@@ -218,8 +218,8 @@ def main(config: L1AConfig):
     print(f"End DateTime: {end_date} \n")
 
     # break up into individual days, day is midnight to midnight
-    st_date = start_date.date() - timedelta(days=1)
-    lst_date = end_date.date() + timedelta(days=1)
+    st_date = start_date.date() #- timedelta(days=1)
+    lst_date = end_date.date() #+ timedelta(days=1)
     main_flist: Dict[datetime, List[str]] = {}
     all_files = []
     print("Dates with data: ", end="")
