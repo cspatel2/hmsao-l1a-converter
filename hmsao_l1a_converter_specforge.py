@@ -554,6 +554,16 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--wl_calib_path",
+        # metavar = 'NAME',
+        required=False,
+        type=str,
+        # default = None,
+        nargs="?",
+        help="Wavelength calibration params file path (.json). The .json file should be in the format of a dictionary with window names as keys and another dictionary as values containing wl_offset, wl_stretch, and wl_pivot.",
+    )
+
+    parser.add_argument(
         "--slitsizeum",
         # metavar = 'NAME',
         required=True,
@@ -595,6 +605,7 @@ if __name__ == "__main__":
         slitsizeum=args.slitsizeum,
         chunksize=args.chunksize,
         readnoise=args.readnoise,
+        wl_calib_path=args.wl_calib_path
     )
 
     main(config)
