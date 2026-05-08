@@ -463,7 +463,7 @@ def apply_spatial_and_spectral_calibration(ids: xr.Dataset, new_wavelength: np.n
         r_in[:, c] = np.interp(
             linangles,   # output ZA (linear)
             angles,      # input ZA (nonlinear)
-            row_idx      # input pixel indices
+            row_idx,      # input pixel indices
         )
 
     # wavelength inverse map
@@ -548,6 +548,6 @@ def apply_spatial_and_spectral_calibration(ids: xr.Dataset, new_wavelength: np.n
         ax2.set_title('Zenith Angle (Warped Linear)')
 
     if returnboth:
-        return ids_za, nds
+        return nds, ids_za
     else:
         return nds

@@ -147,7 +147,7 @@ def main(config: L1AConfig):
         with config.wl_calib_path.open() as f:
             wl_calib_params = json.load(f)
             print(
-                f'wavelength correctioon will be applied to windows: {", ".join(wl_calib_params.keys())}'
+                f'wavelength correction will be applied to windows: {", ".join(wl_calib_params.keys())}'
             )
     else:
         wl_calib_params = None
@@ -416,7 +416,7 @@ def main(config: L1AConfig):
                         f"{yymm}/{prefix}_{yymmdd}_{window}[{subidx:0{ndigits}}].nc"
                     )
                     sub_outfpath = config.destdir / sub_outfname
-                    ds: xr.Dataset = xr.concat(out_countrate[window], dim="tstamp")
+                    ds: xr.Dataset = xr.concat(out_countrate[window], dim="tstamp") # type: ignore
                     gc.collect()
                     ds.attrs.update(
                         dict(
@@ -431,8 +431,9 @@ def main(config: L1AConfig):
                             Note=f"data {is_dark_subtracted} dark corrected.",
                         )
                     )
+                    # print(f'za bin size: {np.diff(ds.za.values).mean():.4f} degrees')  # type: ignore
                     if config.readnoise is not None:
-                        ds = xr.merge([ds, xr.concat(out_noise[window], dim="tstamp")])
+                        ds = xr.merge([ds, xr.concat(out_noise[window], dim="tstamp")]) # type: ignore
                     ds["countrate"].attrs["units"] = "ADU/s/nm"
                     ds["countrate"].attrs["long_name"] = "Line Intensity"
                     ds["noise"].attrs["units"] = "ADU/s/nm"
