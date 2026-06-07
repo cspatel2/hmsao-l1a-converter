@@ -11,6 +11,7 @@ General idea:
     6. check if this image and the a test image line up and make sense.
 '''
 #%%
+import hdf5plugin
 import numpy as np
 import matplotlib.pyplot as plt
 import xarray as xr
@@ -22,6 +23,8 @@ from misdesigner import *
 from PIL import Image
 from astropy.io import fits
 from tqdm import tqdm
+
+xr.set_options(netcdf_engine_order=["h5netcdf", "netcdf4", "scipy"])
 #%%
 
 
@@ -174,7 +177,7 @@ cfmap = cfmap.assign_attrs({
 cfmap = cfmap.to_dataset(name = 'cf')
 #%%
 #save cf map
-encoding = {var: {'zlib': True}
+encoding = {var: hdf5plugin.Zstd(clevel=3)
                                 for var in (*cfmap.data_vars.keys(), *cfmap.coords.keys())}
 sub_outfname = 'hmsao_photometric_calib.nc'
 print('Saving %s...\t' % (sub_outfname), end='')

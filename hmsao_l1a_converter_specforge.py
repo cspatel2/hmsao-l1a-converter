@@ -11,6 +11,7 @@ import os
 import sys
 from time import perf_counter_ns
 from astropy import conf
+import hdf5plugin
 from matplotlib import pyplot as plt
 import numpy as np
 from glob import glob
@@ -25,7 +26,6 @@ from skmpython import datetime_in_timezone
 
 
 from dataclasses import dataclass
-
 # import warnings
 # warnings.simplefilter('once')
 
@@ -37,7 +37,7 @@ warnings.filterwarnings(
     category=FutureWarning,
 )
 
-
+xr.set_options(netcdf_engine_order=["h5netcdf", "netcdf4", "scipy"])
 # %%
 LOCALPATH = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(LOCALPATH))
@@ -424,9 +424,7 @@ def main(config: L1AConfig):
                             ROI=f"{int(window)/10:0.1f} nm",
                             slit_size_um=str(slitsize),
                             DataProcessingLevel="1A",
-                            FileCreationDate=datetime.now().strftime(
-                                "%m/%d/%Y, %H:%M:%S EDT"
-                            ),
+                            FileCreationDate=datetime.now(timezone.utc).isoformat(timespec="seconds").encode('utf-8'),
                             ObservationLocation="Swedish Institute of Space Physics/IRF (Kiruna, Sweden)",
                             Note=f"data {is_dark_subtracted} dark corrected.",
                         )
@@ -449,7 +447,7 @@ def main(config: L1AConfig):
                     ds["za"].attrs["description"] = "Zenith angle"
                     ds["za"].attrs["long_name"] = "Zenith Angle"
                     encoding = {
-                        var: {"zlib": True}
+                        var: hdf5plugin.Zstd(clevel=3)
                         for var in (*ds.data_vars.keys(), *ds.coords.keys())
                     }
                     print("Saving %s...\t" % (sub_outfname), end="")

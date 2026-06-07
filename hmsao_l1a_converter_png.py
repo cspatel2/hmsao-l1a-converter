@@ -10,6 +10,7 @@ from math import ceil
 import os
 import sys
 from time import perf_counter_ns
+import hdf5plugin
 from matplotlib import pyplot as plt
 import numpy as np
 from PIL import Image
@@ -23,6 +24,8 @@ from skmpython import datetime_in_timezone
 from skimage import transform
 from misdesigner import MisInstrumentModel, MisCurveRemover
 from l1a_converter.l1_helpers import *
+
+xr.set_options(netcdf_engine_order=["h5netcdf", "netcdf4", "scipy"])
 
 # %%
 PATH = os.path.dirname(os.path.realpath(__file__))
@@ -344,7 +347,7 @@ def main(parser: argparse.ArgumentParser):
         ds['noise'].attrs['unit'] = 'ADU/s'
         ds['noise'].attrs['long_name'] = 'Noise'
         ds['noise'].attrs['eqn'] = r'Noise is given by sqrt{RN^2 + Counts}/exp'
-        encoding = {var: {'zlib': True}
+        encoding = {var: hdf5plugin.Zstd(clevel=3)
                     for var in (*ds.data_vars.keys(), *ds.coords.keys())}
 
         print('Saving %s...\t' % (sub_outfname), end='')

@@ -14,6 +14,7 @@ import re
 import sys
 from time import perf_counter_ns
 from astropy import conf
+import hdf5plugin
 from matplotlib import pyplot as plt
 import numpy as np
 from PIL import Image
@@ -28,6 +29,7 @@ from skimage import transform
 from misdesigner import MisInstrumentModel, MisCurveRemover
 from dataclasses import dataclass
 
+xr.set_options(netcdf_engine_order=["h5netcdf", "netcdf4", "scipy"])
 # %%
 LOCALPATH = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(LOCALPATH))
@@ -395,7 +397,7 @@ def main(config: L1AConfig):
                     ds['noise'].attrs['eqn'] = r'Noise is given by sqrt{RN^2 + Counts}/exp'
                     ds['tstamp'].attrs['unit'] = 's'
                     ds['tstamp'].attrs['description'] = 'Seconds since UNIX epoch 1970-01-01 00:00:00 UTC'
-                    encoding = {var: {'zlib': True}
+                    encoding = {var: hdf5plugin.Zstd(clevel=3)
                                 for var in (*ds.data_vars.keys(), *ds.coords.keys())}
                     print('Saving %s...\t' % (sub_outfname), end='')
                     sys.stdout.flush()
