@@ -10,6 +10,20 @@ import xarray as xr
 from typing import SupportsFloat as Numeric
 from skimage import transform
 
+def apply_wavelength_calibration(wavelength, coeffs: list[float]|None) -> np.ndarray:
+    '''
+    Apply wavelength calibration to the input wavelength array using the provided polynomial coefficients.
+    Args:
+        wavelength (np.ndarray): Input wavelength array (original wl array that needs to be corrected).
+        coeffs (list): Polynomial coefficients for the wavelength calibration.
+    Returns:
+        np.ndarray: Corrected wavelength array after applying the calibration.
+    '''
+    if coeffs is None:
+        return wavelength
+    wavelength_shift = np.polyval(coeffs, wavelength)
+    corrected_wavelength = wavelength - wavelength_shift
+    return corrected_wavelength
 
 def find_outlier_pixels(data, tolerance=3, worry_about_edges=True):
     # This function finds the hot or dead pixels in a 2D dataset.

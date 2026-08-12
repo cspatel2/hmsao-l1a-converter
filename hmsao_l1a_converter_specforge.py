@@ -17,7 +17,8 @@ import numpy as np
 from glob import glob
 import astropy.io.fits as fits
 from prism_imageproc import ImageStraightener
-from spectra_shift import wavelength_shift_stretch
+# from spectra_shift import wavelength_shift_stretch
+# from l1_helpers import apply_wavelength_calibration
 import pytz
 import xarray as xr
 from tqdm import tqdm
@@ -366,12 +367,15 @@ def main(config: L1AConfig):
                             data = straightened_images[window]
                             #spatial and spectral calibration
                             if wl_calib_params is not None and window in wl_calib_params.keys():
-                                corrected_wls = wavelength_shift_stretch(
+                                # corrected_wls = wavelength_shift_stretch(
+                                #     data.wavelength.values,  # type: ignore
+                                #     wl_calib_params[window]["wl_offset"],
+                                #     wl_calib_params[window]["wl_stretch"],
+                                #     wl_calib_params[window]["wl_pivot"],
+                                # )
+                                corrected_wls = apply_wavelength_calibration(
                                     data.wavelength.values,  # type: ignore
-                                    wl_calib_params[window]["wl_offset"],
-                                    wl_calib_params[window]["wl_stretch"],
-                                    wl_calib_params[window]["wl_pivot"],
-                                )
+                                    wl_calib_params[window])
                                 data = apply_spatial_and_spectral_calibration(data, corrected_wls)  # type: ignore
                             else:
                                 data = convert_y_to_zenithangle(data)  # type: ignore
@@ -395,12 +399,15 @@ def main(config: L1AConfig):
                         for window in valid_windows:
                             rn = straightened_readnoise[window]
                             if wl_calib_params is not None and window in wl_calib_params.keys():
-                                corrected_wls = wavelength_shift_stretch(
+                                # corrected_wls = wavelength_shift_stretch(
+                                #     rn.wavelength.values,  # type: ignore
+                                #     wl_calib_params[window]["wl_offset"],
+                                #     wl_calib_params[window]["wl_stretch"],
+                                #     wl_calib_params[window]["wl_pivot"],
+                                # )
+                                corrected_wls = apply_wavelength_calibration(
                                     rn.wavelength.values,  # type: ignore
-                                    wl_calib_params[window]["wl_offset"],
-                                    wl_calib_params[window]["wl_stretch"],
-                                    wl_calib_params[window]["wl_pivot"],
-                                )
+                                    wl_calib_params[window])
                                 rn = apply_spatial_and_spectral_calibration(rn, corrected_wls)  # type: ignore
                             else:
                                 rn = convert_y_to_zenithangle(rn)  # type: ignore
